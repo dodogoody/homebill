@@ -67,7 +67,7 @@ function gasCallJsonp(url){
   });
 }
 
-const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements']);
+const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements','getConfig']);
 async function gasCall(action,payload={}){
   if(!GAS_URL) throw new Error('未設定 GAS_URL');
   if(READ_ACTIONS.has(action)){
@@ -309,7 +309,7 @@ function HomePage({data,onGoPage,ledgerName,onBack}){
 }
 
 // ══ ADD EXPENSE ══
-function AddPage({members,onSave,onClose,toast}){
+function AddPage({members,expenses=[],onSave,onClose,toast}){
   const[amt,setAmt]=useState('');
   const[desc,setDesc]=useState('');
   const[date,setDate]=useState(today());
@@ -321,6 +321,49 @@ function AddPage({members,onSave,onClose,toast}){
   const[loading,setLoading]=useState(false);
   const amtRef=useRef();
   useEffect(()=>{setTimeout(()=>amtRef.current?.focus(),350);},[]);
+
+  // Smart quick tags: find recurring descriptions (appear 2+ times)
+  const quickTags=useMemo(()=>{
+    const freq={};
+    expenses.forEach(e=>{
+      const k=e.description+'|'+e.category+'|'+e.amount;
+      if(!freq[k])freq[k]={desc:e.description,cat:e.category,amt:parseFloat(e.amount),count:0};
+      freq[k].count++;
+    });
+    // Also add manual saved tags from localStorage
+    let saved=[];
+    try{saved=JSON.parse(localStorage.getItem('quicktags')||'[]');}catch(e){}
+    const recurring=Object.values(freq).filter(x=>x.count>=2).sort((a,b)=>b.count-a.count).slice(0,5)
+      .map(x=>({icon:CICO[x.cat]||'📌',label:x.desc,cat:x.cat,amt:x.amt,saved:false}));
+    const savedTags=saved.map(t=>({...t,saved:true}));
+    // merge, dedupe by label
+    const seen=new Set();
+    return[...savedTags,...recurring].filter(t=>{if(seen.has(t.label))return false;seen.add(t.label);return true;}).slice(0,8);
+  },[expenses]);
+
+  const[selTag,setSelTag]=useState(null);
+  const applyTag=(tag)=>{
+    setDesc(tag.label);setCat(tag.cat);
+    if(tag.amt){setAmt(String(tag.amt));}
+    setSelTag(tag.label);
+  };
+  const saveTag=()=>{
+    if(!desc.trim()){toast('請先填入描述','err');return;}
+    try{
+      const saved=JSON.parse(localStorage.getItem('quicktags')||'[]');
+      if(saved.some(t=>t.label===desc.trim())){toast('標籤已存在','err');return;}
+      saved.unshift({icon:CICO[cat]||'📌',label:desc.trim(),cat,amt:parseFloat(amt)||0});
+      localStorage.setItem('quicktags',JSON.stringify(saved.slice(0,10)));
+      toast('✅ 已儲存為快速標籤','ok');
+    }catch(e){toast('儲存失敗','err');}
+  };
+  const removeTag=(label)=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem('quicktags')||'[]');
+      localStorage.setItem('quicktags',JSON.stringify(saved.filter(t=>t.label!==label)));
+      toast('已移除標籤');
+    }catch(e){}
+  };
   const toggle=n=>setSel(s=>s.includes(n)?s.filter(x=>x!==n):[...s,n]);
   const csum=Object.values(custom).reduce((a,b)=>a+(parseFloat(b)||0),0);
   const total=parseFloat(amt)||0;
@@ -350,6 +393,26 @@ function AddPage({members,onSave,onClose,toast}){
       <h2 className="text-lg font-black flex-1">記帳</h2>
     </div>
     <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
+      {/* Quick tags */}
+      {quickTags.length>0&&<div className="mb-5">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider">快速標籤</label>
+          <button onClick={saveTag} className="text-xs text-pri font-bold">＋ 儲存目前</button>
+        </div>
+        <div className="scroll-x">
+          {quickTags.map((t,i)=>(
+            <div key={i} className="flex-shrink-0 flex items-center gap-1.5">
+              <button onClick={()=>applyTag(t)}
+                className={`px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 flex items-center gap-1.5 whitespace-nowrap transition-all
+                  ${selTag===t.label?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+                <span>{t.icon}</span><span>{t.label}</span>
+                {t.amt>0&&<span className="text-xs opacity-70">{fmt(t.amt)}</span>}
+              </button>
+              {t.saved&&<button onClick={()=>removeTag(t.label)} className="text-tx3 text-xs">✕</button>}
+            </div>))}
+        </div>
+      </div>}
+
       {/* Amount */}
       <div className="mb-5">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">金額</label>
@@ -466,6 +529,19 @@ function ImportSheet({members,ledgerId,onDone,toast,existingExpenses=[]}){
   const[payer,setPayer]=useState(members[0]?mname(members[0]):'');
   const[aiKey,setAiKey]=useState(()=>localStorage.getItem('ai_key')||'');
   const[aiProv,setAiProv]=useState(()=>localStorage.getItem('ai_prov')||'openai');
+  const[backendHasKey,setBackendHasKey]=useState({openai:false,claude:false});
+  const[keySource,setKeySource]=useState('local'); // 'local' or 'backend'
+
+  useEffect(()=>{
+    // Check if backend has keys stored
+    gasCall('getConfig',{}).then(cfg=>{
+      setBackendHasKey({openai:!!cfg.hasOpenAiKey,claude:!!cfg.hasClaudeKey});
+      // Auto-switch to backend key if available and no local key
+      if((aiProv==='openai'&&cfg.hasOpenAiKey)||(aiProv==='claude'&&cfg.hasClaudeKey)){
+        if(!aiKey) setKeySource('backend');
+      }
+    }).catch(()=>{});
+  },[]);
   const[aiLoading,setAiLoading]=useState(false);
 
   const normDate=s=>{s=s.trim();
@@ -541,12 +617,14 @@ function ImportSheet({members,ledgerId,onDone,toast,existingExpenses=[]}){
     reader.onload=async e=>{
       const b64=e.target.result.split(',')[1];
       const mtype=file.type;
+      const effectiveKey=keySource==='backend'?'':aiKey; // empty = use backend key
       try{
         let result;
         const prompt='這是一張信用卡帳單圖片。請擷取所有消費明細，以JSON陣列回傳，格式：[{"date":"YYYY-MM-DD","description":"消費說明","amount":金額數字}]。只回傳JSON，金額取絕對值，排除0元。';
-        if(aiProv==='openai'){
+        if(aiProv==='openai'&&keySource==='local'){
+          // Direct call with local key
           const res=await fetch('https://api.openai.com/v1/chat/completions',{
-            method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+aiKey},
+            method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+effectiveKey},
             body:JSON.stringify({model:'gpt-4o',max_tokens:2000,messages:[{role:'user',content:[
               {type:'image_url',image_url:{url:`data:${mtype};base64,${b64}`}},{type:'text',text:prompt}]}]})});
           const d=await res.json();if(d.error)throw new Error(d.error.message);
@@ -596,18 +674,30 @@ function ImportSheet({members,ledgerId,onDone,toast,existingExpenses=[]}){
     <div className="mb-4">
       <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">AI 截圖識別</p>
       <div className="flex gap-2 mb-2">
-        {[['openai','💬 ChatGPT'],['claude','🤖 Claude']].map(([v,l])=>
-          <button key={v} onClick={()=>{setAiProv(v);localStorage.setItem('ai_prov',v);}}
-            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 ${aiProv===v?'border-pri text-pri bg-pri/10':'border-bd text-tx2 bg-c2'}`}>{l}</button>)}
+        {[['openai','💬 ChatGPT'],['claude','🤖 Claude']].map(([v,l])=>{
+          const hasBackend=(v==='openai'?backendHasKey.openai:backendHasKey.claude);
+          return<button key={v} onClick={()=>{setAiProv(v);localStorage.setItem('ai_prov',v);}}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 relative ${aiProv===v?'border-pri text-pri bg-pri/10':'border-bd text-tx2 bg-c2'}`}>
+            {l}{hasBackend&&<span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-grn text-bg text-[9px] flex items-center justify-center font-black">✓</span>}
+          </button>;})}
       </div>
-      <div className="flex gap-2">
+      {/* Key source toggle */}
+      {(backendHasKey.openai||backendHasKey.claude)&&<div className="flex bg-c3 rounded-xl p-1 gap-1 mb-2">
+        {[['backend','🔒 後台 Key'],['local','💻 手動輸入']].map(([v,l])=>
+          <button key={v} onClick={()=>setKeySource(v)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${keySource===v?'bg-pri text-bg':'text-tx2'}`}>{l}</button>)}
+      </div>}
+      {keySource==='local'&&<div className="flex gap-2">
         <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)}
           className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2.5 text-sm text-tx outline-none focus:border-pri"
           placeholder={aiProv==='openai'?'sk-...':'sk-ant-...'}/>
         <button onClick={()=>{localStorage.setItem('ai_key',aiKey);toast('已儲存','ok');}}
           className="px-4 py-2.5 bg-c2 border border-bd rounded-xl text-sm font-bold text-tx2">儲存</button>
-      </div>
-      {aiProv==='claude'&&<p className="text-xs text-tx3 mt-1.5">⚠ Claude 需先在 Apps Script 執行 requestExternalPermission</p>}
+      </div>}
+      {keySource==='backend'&&<div className="bg-grn/10 border border-grn/30 rounded-xl px-3 py-2.5 text-sm text-grn font-semibold">
+        🔒 使用後台儲存的 API Key（安全）
+      </div>}
+      {aiProv==='claude'&&<p className="text-xs text-tx3 mt-1.5">Claude 免費版支援 claude-3-5-haiku</p>}
     </div>
 
     {/* Tabs */}
@@ -712,7 +802,7 @@ function ImportSheet({members,ledgerId,onDone,toast,existingExpenses=[]}){
 }
 
 // ══ SETTLE PAGE ══
-function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
+function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack,onLocalSettle}){
   const{members=[],expenses=[],settlement={},settles=[]}=data;
   const{balance={},transactions=[]}=settlement;
   const[showDetail,setShowDetail]=useState(null);
@@ -722,9 +812,10 @@ function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
       balances:Object.entries(balance).map(([p,a])=>({person:p,amount:Math.round(a)}))};
     try{
       await gasCall('addSettle',{data:{note:note||'結清 '+new Date().toLocaleDateString('zh-TW'),settled_at:new Date().toISOString(),snapshot:snap},ledgerId});
-      toast('✅ 結清紀錄已儲存，重新計算中…','ok');
-      // Force fresh reload so settlement recalculates
-      await new Promise(r=>setTimeout(r,1500));
+      toast('✅ 結清完成！','ok');
+      // Immediately zero out local settlement for instant UI feedback
+      if(onLocalSettle) onLocalSettle();
+      await new Promise(r=>setTimeout(r,1600));
       await onRefresh();
     }catch(e){toast('儲存失敗: '+e.message,'err');}};
   const delSettle=async id=>{
@@ -772,14 +863,23 @@ function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
         </div>;})}</Card>
     {transactions.length>0&&<div className="px-4 mb-4">
       <Btn onClick={doSettle}>✅ 結清並記錄</Btn></div>}
-    {settles.length>0&&<>
-      <SectionHeader title="歷史結清"/>
-      <Card>{settles.map((s,i)=>{
-        const dt=s.settled_at?new Date(s.settled_at).toLocaleDateString('zh-TW'):'';
-        const snap=s.snapshot||{};
-        return<Row key={i} left="📋" title={s.note||'結清紀錄'} sub={`${dt}${snap.expense_count?' · '+snap.expense_count+'筆':''}`}
-          onDel={()=>delSettle(s.id)} onClick={()=>setShowDetail(s)}/>;})}</Card>
-    </>}
+    {settles.length>0&&(()=>{
+      const[showHist,setShowHist]=useState(false);
+      return<>
+        <div className="px-4 mb-3">
+          <button onClick={()=>setShowHist(h=>!h)}
+            className="w-full py-3 bg-c1 rounded-2xl border border-bd text-sm font-bold text-tx2 flex items-center justify-center gap-2">
+            <span>📁 歷史結清紀錄（{settles.length} 筆）</span>
+            <span className={`transition-transform ${showHist?'rotate-180':''}`}>▾</span>
+          </button>
+        </div>
+        {showHist&&<Card>{settles.map((s,i)=>{
+          const dt=s.settled_at?new Date(s.settled_at).toLocaleDateString('zh-TW'):'';
+          const snap=s.snapshot||{};
+          return<Row key={i} left="📋" title={s.note||'結清紀錄'} sub={`${dt}${snap.expense_count?' · '+snap.expense_count+'筆':''}`}
+            onDel={()=>delSettle(s.id)} onClick={()=>setShowDetail(s)}/>;})}</Card>}
+      </>;
+    })()}
     {showDetail&&<Sheet title={showDetail.note||'結清紀錄'} onClose={()=>setShowDetail(null)}>
       <p className="text-xs text-tx3 mb-3">{showDetail.settled_at?new Date(showDetail.settled_at).toLocaleDateString('zh-TW'):''}</p>
       {(showDetail.snapshot?.transactions||[]).map((t,i)=>
@@ -1095,9 +1195,10 @@ function App(){
   return<div className="min-h-screen bg-bg text-tx">
     {page==='home'&&<HomePage data={data} onGoPage={setPage} ledgerName={ledgerName} onBack={backToList}/>}
     {page==='records'&&<RecordsPage data={data} onDelete={handleDelete} onImport={()=>setShowImport(true)} ledgerName={ledgerName} onBack={backToList}/>}
-    {page==='settle'&&<SettlePage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
+    {page==='settle'&&<SettlePage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}
+      onLocalSettle={()=>setData(d=>({...d,settlement:{balance:Object.fromEntries(Object.keys(d.settlement?.balance||{}).map(k=>[k,0])),transactions:[]}}))}/>}
     {page==='members'&&<MembersPage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
-    {showAdd&&<AddPage members={data.members} onSave={handleAdd} onClose={()=>setShowAdd(false)} toast={showToast}/>}
+    {showAdd&&<AddPage members={data.members} expenses={data.expenses||[]} onSave={handleAdd} onClose={()=>setShowAdd(false)} toast={showToast}/>}
     {showImport&&<ImportSheet members={data.members} ledgerId={ledgerId} existingExpenses={data.expenses||[]} onDone={()=>{setShowImport(false);load();}} toast={showToast}/>}
     <Nav page={page} onNav={setPage} onAdd={()=>setShowAdd(true)}/>
     {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
