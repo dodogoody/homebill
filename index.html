@@ -319,7 +319,7 @@ function HomePage({data,onGoPage,ledgerName,onBack}){
 }
 
 // ══ ADD EXPENSE ══
-function AddPage({members,expenses=[],onSave,onClose,toast}){
+function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
   const[amt,setAmt]=useState('');
   const[desc,setDesc]=useState('');
   const[date,setDate]=useState(today());
@@ -402,6 +402,10 @@ function AddPage({members,expenses=[],onSave,onClose,toast}){
     <div className="flex items-center gap-3 px-4 py-3 border-b border-bd flex-shrink-0">
       <button onClick={onClose} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2">✕</button>
       <h2 className="text-lg font-black flex-1">記帳</h2>
+      <button onClick={onImport}
+        className="flex items-center gap-1.5 px-3 py-2 bg-c2 rounded-xl border border-bd text-tx2 text-sm font-bold active:opacity-70">
+        <span>📥</span><span>匯入</span>
+      </button>
     </div>
     <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
       {/* Quick tags */}
@@ -632,13 +636,12 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
   const[keySource,setKeySource]=useState('local'); // 'local' or 'backend'
 
   useEffect(()=>{
-    // Check if backend has keys stored
     gasCall('getConfig',{}).then(cfg=>{
-      setBackendHasKey({openai:!!cfg.hasOpenAiKey,claude:!!cfg.hasClaudeKey});
-      // Auto-switch to backend key if available and no local key
-      if((aiProv==='openai'&&cfg.hasOpenAiKey)||(aiProv==='claude'&&cfg.hasClaudeKey)){
-        if(!aiKey) setKeySource('backend');
-      }
+      const bk={openai:!!cfg.hasOpenAiKey,claude:!!cfg.hasClaudeKey};
+      setBackendHasKey(bk);
+      // Auto-use backend key if available (prefer backend over local)
+      const provHasBackend=aiProv==='openai'?bk.openai:bk.claude;
+      if(provHasBackend) setKeySource('backend');
     }).catch(()=>{});
   },[]);
   const[aiLoading,setAiLoading]=useState(false);
@@ -720,7 +723,7 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
       try{
         let result;
         const prompt='這是一張信用卡帳單圖片。請擷取所有消費明細，以JSON陣列回傳，格式：[{"date":"YYYY-MM-DD","description":"消費說明","amount":金額數字}]。只回傳JSON，金額取絕對值，排除0元。';
-        if(aiProv==='openai'&&keySource==='local'){
+        if(aiProv==='openai'&&keySource==='local'&&effectiveKey){
           // Direct call with local key
           const res=await fetch('https://api.openai.com/v1/chat/completions',{
             method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+effectiveKey},
@@ -803,32 +806,38 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
   return<Sheet title="匯入帳單" onClose={onClose}>
     {/* AI Key */}
     <div className="mb-4">
-      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">AI 截圖識別</p>
-      <div className="flex gap-2 mb-2">
+      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">AI 服務</p>
+      <div className="flex gap-2 mb-3">
         {[['openai','💬 ChatGPT'],['claude','🤖 Claude']].map(([v,l])=>{
           const hasBackend=(v==='openai'?backendHasKey.openai:backendHasKey.claude);
           return<button key={v} onClick={()=>{setAiProv(v);localStorage.setItem('ai_prov',v);}}
-            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 relative ${aiProv===v?'border-pri text-pri bg-pri/10':'border-bd text-tx2 bg-c2'}`}>
+            className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 relative ${aiProv===v?'border-pri text-pri bg-pri/10':'border-bd text-tx2 bg-c2'}`}>
             {l}{hasBackend&&<span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-grn text-bg text-[9px] flex items-center justify-center font-black">✓</span>}
           </button>;})}
       </div>
-      {/* Key source toggle */}
-      {(backendHasKey.openai||backendHasKey.claude)&&<div className="flex bg-c3 rounded-xl p-1 gap-1 mb-2">
-        {[['backend','🔒 後台 Key'],['local','💻 手動輸入']].map(([v,l])=>
-          <button key={v} onClick={()=>setKeySource(v)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${keySource===v?'bg-pri text-bg':'text-tx2'}`}>{l}</button>)}
-      </div>}
-      {keySource==='local'&&<div className="flex gap-2">
-        <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)}
-          className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2.5 text-sm text-tx outline-none focus:border-pri"
-          placeholder={backendHasKey[aiProv]?'（後台已設定，可留空）':aiProv==='openai'?'sk-...':'sk-ant-...'}/>
-        <button onClick={()=>{localStorage.setItem('ai_key',aiKey);toast('已儲存','ok');}}
-          className="px-4 py-2.5 bg-c2 border border-bd rounded-xl text-sm font-bold text-tx2">儲存</button>
-      </div>}
-      {keySource==='backend'&&<div className="bg-grn/10 border border-grn/30 rounded-xl px-3 py-2.5 text-sm text-grn font-semibold">
-        🔒 使用後台儲存的 API Key（安全）
-      </div>}
-      {aiProv==='claude'&&<p className="text-xs text-tx3 mt-1.5">Claude 免費版支援 claude-3-5-haiku</p>}
+      {/* Show backend key status */}
+      {backendHasKey[aiProv]&&keySource==='backend'
+        ?<div className="bg-grn/10 border border-grn/30 rounded-xl px-4 py-3 flex items-center gap-3 mb-2">
+          <span className="text-xl">🔒</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-grn">後台 API Key 已設定</p>
+            <p className="text-xs text-tx3 mt-0.5">可直接使用，無需輸入</p>
+          </div>
+          <button onClick={()=>setKeySource('local')} className="text-xs text-tx3 underline">手動輸入</button>
+        </div>
+        :<div>
+          {backendHasKey[aiProv]&&<button onClick={()=>setKeySource('backend')} className="text-xs text-pri font-bold mb-2 block">← 使用後台 Key</button>}
+          <div className="flex gap-2">
+            <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)}
+              className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2.5 text-sm text-tx outline-none focus:border-pri"
+              placeholder={aiProv==='openai'?'sk-...':'sk-ant-...'}/>
+            <button onClick={()=>{localStorage.setItem('ai_key',aiKey);toast('已儲存','ok');}}
+              className="px-4 py-2.5 bg-c2 border border-bd rounded-xl text-sm font-bold text-tx2">儲存</button>
+          </div>
+          {!backendHasKey[aiProv]&&<p className="text-xs text-tx3 mt-1.5">
+            {aiProv==='claude'?'claude-3-5-haiku 支援圖片識別':'需要 OpenAI 付費帳號'}
+          </p>}
+        </div>}
     </div>
 
     {/* Tabs */}
@@ -1373,7 +1382,7 @@ function App(){
           settlement:{balance:Object.fromEntries(Object.keys(d.settlement?.balance||{}).map(k=>[k,0])),transactions:[]}
         }))}/>}
     {page==='members'&&<MembersPage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
-    {showAdd&&<AddPage members={data.members} expenses={data.expenses||[]} onSave={handleAdd} onClose={()=>setShowAdd(false)} toast={showToast}/>}
+    {showAdd&&<AddPage members={data.members} expenses={data.expenses||[]} onSave={handleAdd} onClose={()=>setShowAdd(false)} onImport={()=>{setShowAdd(false);setShowImport(true);}} toast={showToast}/>}
     {showImport&&<ImportSheet members={data.members} ledgerId={ledgerId} existingExpenses={data.expenses||[]} onDone={()=>{setShowImport(false);load();}} onClose={()=>setShowImport(false)} toast={showToast}/>}
     <Nav page={page} onNav={setPage} onAdd={()=>setShowAdd(true)}/>
     {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
