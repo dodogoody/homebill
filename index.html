@@ -67,11 +67,11 @@ function gasCallJsonp(url){
   });
 }
 
-const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements','getConfig']);
+const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements','getConfig','getJobResult']);
 async function gasCall(action,payload={}){
   if(!GAS_URL) throw new Error('未設定 GAS_URL');
   if(READ_ACTIONS.has(action)){
-    // JSONP GET — no CORS restriction at all
+    // JSONP GET — no CORS restriction
     const p={action};
     Object.entries(payload).forEach(([k,v])=>{
       p[k]=typeof v==='object'?JSON.stringify(v):String(v);
@@ -79,8 +79,25 @@ async function gasCall(action,payload={}){
     const qs=Object.entries(p).map(([k,v])=>
       encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
     return await gasCallJsonp(GAS_URL+'?'+qs);
+  }else if(action==='ocrImage'){
+    // OCR: 2-step async pattern to work around GAS CORS
+    // Step 1: POST image + jobId (no-cors, fire-and-forget)
+    const jobId='job_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'ocrImage',...payload,jobId}),mode:'no-cors'});
+    // Step 2: Poll via JSONP until result appears (max 45s)
+    await new Promise(r=>setTimeout(r,4000)); // initial wait for processing
+    for(let i=0;i<20;i++){
+      await new Promise(r=>setTimeout(r,2000));
+      try{
+        const r=await gasCallJsonp(GAS_URL+'?action=getJobResult&jobId='+encodeURIComponent(jobId));
+        if(r&&r.status==='done') return r.result;
+        if(r&&r.status==='error') throw new Error(r.error||'AI 識別失敗');
+        // status==='pending' → keep polling
+      }catch(e){if(e.message!=='JSONP timeout')throw e;}
+    }
+    throw new Error('AI 識別逾時，請重試');
   }else{
-    // no-cors POST — write succeeds, response opaque = OK
+    // Regular writes: no-cors POST
     fetch(GAS_URL,{method:'POST',body:JSON.stringify({action,...payload}),mode:'no-cors'});
     await new Promise(r=>setTimeout(r,1400));
     return{success:true};
@@ -1018,7 +1035,7 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
         <div>
           <label className={`block border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors mb-3 ${aiLoading?'border-pri':'border-bd hover:border-pri'}`}>
             {aiLoading
-              ?<><p className="text-4xl mb-2">⏳</p><p className="text-sm text-tx2">AI 分析中，請稍候…</p><p className="text-xs text-tx3 mt-1">PDF 可能需要較長時間</p></>
+              ?<><p className="text-4xl mb-2">⏳</p><p className="text-sm text-tx2">AI 分析中，請稍候…</p><p className="text-xs text-tx3 mt-1">通常需要 10-30 秒，請耐心等候</p></>
               :<><p className="text-4xl mb-2">🖼️</p>
                 <p className="text-sm font-semibold text-tx2">點擊上傳帳單截圖或 PDF</p>
                 <p className="text-xs text-tx3 mt-1">.jpg .png .pdf（支援加密 PDF）</p>
