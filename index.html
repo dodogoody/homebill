@@ -497,14 +497,46 @@ function AddPage({members,expenses=[],onSave,onClose,toast}){
 
 // ══ RECORDS PAGE ══
 function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
-  const{expenses=[],members=[]}=data;
+  const{expenses=[],members=[],settles=[]}=data;
+  const activeExp=data.activeExpenses||expenses;
+  const[showSettled,setShowSettled]=useState(false);
   const slb=p=>{
     if(Array.isArray(p))return p.length===members.length?'所有人平分':p.join('、')+' 平分';
     if(p&&typeof p==='object')return Object.entries(p).map(([k,v])=>`${k} ${fmt(v)}`).join(' / ');
     return'';
   };
+
+  // Split: active (post-settle) vs settled (pre-settle)
+  const activeIds=new Set((activeExp).map(e=>e.id));
+  const activeList=expenses.filter(e=>activeIds.has(e.id));
+  const settledList=expenses.filter(e=>!activeIds.has(e.id));
+
+  // Group active by month
   const groups={};
-  expenses.forEach(e=>{const m=(e.date||'').slice(0,7);if(!groups[m])groups[m]=[];groups[m].push(e);});
+  activeList.forEach(e=>{const m=(e.date||'').slice(0,7);if(!groups[m])groups[m]=[];groups[m].push(e);});
+
+  const ExpRow=({e,settled=false})=>(
+    <div className={`flex gap-3 px-4 py-3.5 border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
+      <div className="w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0">
+        {CICO[e.category]||'📌'}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-2">
+          <p className="font-semibold text-base leading-tight flex-1 truncate">{e.description}</p>
+          {settled&&<span className="text-[10px] font-bold text-tx3 bg-bd px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5">已結算</span>}
+        </div>
+        <p className="text-xs text-tx2 mt-0.5">{e.date?.slice(5)} · {e.payer} 付 · {slb(e.participants)}</p>
+        {e.note&&<p className="text-xs text-pri/80 mt-1 flex items-center gap-1">
+          <span className="opacity-60">📝</span>{e.note}
+        </p>}
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <p className="font-black text-base">{fmt(e.amount)}</p>
+        {!settled&&<button onClick={()=>{if(confirm('確定刪除？'))onDelete(e.id);}}
+          className="text-tx3 text-sm mt-1">🗑</button>}
+      </div>
+    </div>
+  );
 
   return<div className="pb-nav">
     <div className="pt-safe"/>
@@ -515,19 +547,35 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
     </div>
     <div className="px-5 pt-2 pb-1">
       <h1 className="text-2xl font-black">帳目</h1>
-      <p className="text-tx2 text-sm mt-0.5">共 {expenses.length} 筆</p>
+      <p className="text-tx2 text-sm mt-0.5">本期 {activeList.length} 筆{settledList.length>0?` · 已結算 ${settledList.length} 筆`:''}</p>
     </div>
-    {!expenses.length&&<div className="py-20 text-center"><p className="text-5xl mb-3">📭</p>
-      <p className="font-bold text-lg text-tx2">還沒有帳目</p></div>}
+
+    {/* Active expenses */}
+    {!activeList.length&&<div className="py-12 text-center">
+      <p className="text-5xl mb-3">✅</p>
+      <p className="font-bold text-lg text-tx2">本期無帳目</p>
+    </div>}
     {Object.keys(groups).sort().reverse().map(mo=><div key={mo}>
       <p className="px-5 py-1.5 text-xs font-bold text-tx3 uppercase tracking-wider">{mo}</p>
-      <Card>{groups[mo].map((e,i)=>
-        <Row key={e.id} left={CICO[e.category]||'📌'} title={e.description}
-          sub={`${e.date?.slice(5)} · ${e.payer} 付 · ${slb(e.participants)}${e.note?' · '+e.note:''}`}
-          right={<span className="font-black text-base">{fmt(e.amount)}</span>}
-          onDel={()=>{ if(confirm('確定刪除？'))onDelete(e.id); }}/>)}
-      </Card>
+      <Card>{groups[mo].map(e=><ExpRow key={e.id} e={e}/>)}</Card>
     </div>)}
+
+    {/* Settled expenses — collapsed by default */}
+    {settledList.length>0&&<div className="px-4 my-3">
+      <button onClick={()=>setShowSettled(s=>!s)}
+        className="w-full py-3 bg-c1 rounded-2xl border border-bd text-sm font-bold text-tx3 flex items-center justify-center gap-2">
+        <span>🗂 已結算帳目（{settledList.length} 筆）</span>
+        <span className={`transition-transform text-xs ${showSettled?'rotate-180':''}`}>▾</span>
+      </button>
+    </div>}
+    {showSettled&&(()=>{
+      const sg={};
+      settledList.forEach(e=>{const m=(e.date||'').slice(0,7);if(!sg[m])sg[m]=[];sg[m].push(e);});
+      return Object.keys(sg).sort().reverse().map(mo=><div key={mo}>
+        <p className="px-5 py-1.5 text-xs font-bold text-tx3 uppercase tracking-wider">{mo}</p>
+        <Card className="opacity-80">{sg[mo].map(e=><ExpRow key={e.id} e={e} settled={true}/>)}</Card>
+      </div>);
+    })()}
   </div>;
 }
 
