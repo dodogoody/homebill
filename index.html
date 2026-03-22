@@ -53,8 +53,10 @@ const { useState, useEffect, useCallback, useRef, useMemo } = React;
 // ══════════════════════════════════════════
 // CONFIG — change GAS_URL to your deployed URL
 // ══════════════════════════════════════════
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxMcktk_mIHMe8yrTCat0-1oWfNuVjvzTfru2CMh8aY9rSkLxU2yeU9IJxTSuk7JBxb1w/exec';
-  // 填入你的 GAS 部署 URL，或留空用 mock 資料
+// ══ 填入你的 GAS 部署 URL ══
+// 例：const GAS_URL = 'https://script.google.com/macros/s/AKfycbx.../exec';
+// 留空 = 使用 mock 示範資料（不連後端）
+const GAS_URL = '';
 
 // ══════════════════════════════════════════
 // API LAYER
@@ -63,12 +65,15 @@ const api = {
   async call(action, payload = {}) {
     if (!GAS_URL) return mockApi(action, payload);
     try {
+      // GAS CORS fix: use no Content-Type header (avoids preflight)
+      // Send as plain text, GAS still parses JSON body
       const res = await fetch(GAS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, ...payload }),
+        redirect: 'follow',
       });
-      const data = await res.json();
+      const text = await res.text();
+      const data = JSON.parse(text);
       if (data.error) throw new Error(data.error);
       return data;
     } catch (e) {
