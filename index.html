@@ -47,30 +47,28 @@ const {useState,useEffect,useCallback,useRef,useMemo}=React;
 const GAS_URL='https://script.google.com/macros/s/AKfycbxMcktk_mIHMe8yrTCat0-1oWfNuVjvzTfru2CMh8aY9rSkLxU2yeU9IJxTSuk7JBxb1w/exec';
 
 // ══ API ══
-// GAS CORS fix:
-//   Reads  → GET with URL params (no preflight, CORS headers on final response)
-//   Writes → POST no-cors (write succeeds, response opaque; then re-fetch to get data)
+// GAS CORS 解決方案：全部用 GET + URL params
+// 原因：GAS POST 會 redirect → body 丟失 → 寫入失敗
+// GET 不 preflight，CORS header 在 final response 上，完全正常運作
+// READ = GET (no CORS preflight), WRITE = POST no-cors
 const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements']);
-
 async function gasCall(action,payload={}){
   if(!GAS_URL) throw new Error('未設定 GAS_URL');
   if(READ_ACTIONS.has(action)){
-    // GET request — no preflight, works with CORS
-    const params=new URLSearchParams({action,...payload});
-    // Complex objects need JSON encoding
-    Object.keys(payload).forEach(k=>{
-      if(typeof payload[k]==='object')params.set(k,JSON.stringify(payload[k]));
-    });
-    const res=await fetch(`${GAS_URL}?${params}`,{method:'GET',redirect:'follow'});
+    // GET — safe cross-origin without preflight
+    const p={action};
+    Object.entries(payload).forEach(([k,v])=>{p[k]=typeof v==='object'?JSON.stringify(v):String(v);});
+    const qs=Object.entries(p).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
+    const res=await fetch(GAS_URL+'?'+qs,{redirect:'follow'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
     const text=await res.text();
     const d=JSON.parse(text);
-    if(d.error)throw new Error(d.error);
+    if(d&&d.error)throw new Error(d.error);
     return d;
   }else{
-    // POST no-cors — write succeeds even though response is opaque
-    await fetch(GAS_URL,{method:'POST',body:JSON.stringify({action,...payload}),mode:'no-cors',redirect:'follow'});
-    // Wait briefly then return success (actual data refresh done by caller via getAll)
-    await new Promise(r=>setTimeout(r,800));
+    // POST no-cors — write goes through, response opaque (that's OK)
+    fetch(GAS_URL,{method:'POST',body:JSON.stringify({action,...payload}),mode:'no-cors'});
+    await new Promise(r=>setTimeout(r,1300));
     return{success:true};
   }
 }
@@ -858,23 +856,33 @@ function LedgerPage({onEnter,toast}){
   const create=async()=>{
     if(!newName.trim()){toast('請輸入帳本名稱','err');return;}
     setSaving(true);
-    try{await gasCall('createLedger',{name:newName.trim(),emoji:newEmoji});
+    try{
+      await gasCall('createLedger',{name:newName.trim(),emoji:newEmoji});
+      // wait extra for no-cors write to complete then reload
+      await new Promise(r=>setTimeout(r,1500));
       await load();setShowNew(false);setNewName('');toast('✅ 已建立','ok');}
-    catch(e){toast('建立失敗','err');}finally{setSaving(false);}};
+    catch(e){toast('建立失敗: '+e.message,'err');}finally{setSaving(false);}};
 
   const save=async()=>{
     if(!editName.trim()){toast('請輸入名稱','err');return;}
     setSaving(true);
-    try{await gasCall('renameLedger',{id:editId,name:editName.trim(),emoji:editEmoji});
+    try{
+      await gasCall('renameLedger',{id:editId,name:editName.trim(),emoji:editEmoji});
+      await new Promise(r=>setTimeout(r,1500));
       await load();setEditId(null);toast('✅ 已更新','ok');}
-    catch(e){toast('更新失敗','err');}finally{setSaving(false);}};
+    catch(e){toast('更新失敗: '+e.message,'err');}finally{setSaving(false);}};
 
   const del=async id=>{
     if(!confirm('確定刪除此帳本？'))return;
     try{await gasCall('deleteLedger',{id});await load();toast('已刪除');}
     catch(e){toast('刪除失敗','err');}};
 
-  if(loading)return<div className="min-h-screen bg-bg flex items-center justify-center"><Spin/></div>;
+  if(loading)return<div className="min-h-screen bg-bg flex items-center justify-center">
+    <div className="text-center">
+      <Spin/>
+      <p className="text-tx2 text-sm mt-3">載入帳本中…</p>
+    </div>
+  </div>;
 
   return<div className="min-h-screen bg-bg pb-10">
     <div className="pt-safe"/>
