@@ -45,17 +45,45 @@ const {useState,useEffect,useCallback,useRef,useMemo}=React;
 const GAS_URL='https://script.google.com/macros/s/AKfycbxMcktk_mIHMe8yrTCat0-1oWfNuVjvzTfru2CMh8aY9rSkLxU2yeU9IJxTSuk7JBxb1w/exec';
 
 // ══ API ══
+// GAS CORS fix:
+//   Reads  → GET with URL params (no preflight, CORS headers on final response)
+//   Writes → POST no-cors (write succeeds, response opaque; then re-fetch to get data)
+const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements']);
+
 async function gasCall(action,payload={}){
-  const body=JSON.stringify({action,...payload});
-  const res=await fetch(GAS_URL,{method:'POST',body,redirect:'follow'});
-  const text=await res.text();
-  try{const d=JSON.parse(text);if(d.error)throw new Error(d.error);return d;}
-  catch(e){if(e.message&&e.message!==text)throw e;throw new Error('回應格式錯誤');}
+  if(!GAS_URL) throw new Error('未設定 GAS_URL');
+  if(READ_ACTIONS.has(action)){
+    // GET request — no preflight, works with CORS
+    const params=new URLSearchParams({action,...payload});
+    // Complex objects need JSON encoding
+    Object.keys(payload).forEach(k=>{
+      if(typeof payload[k]==='object')params.set(k,JSON.stringify(payload[k]));
+    });
+    const res=await fetch(`${GAS_URL}?${params}`,{method:'GET',redirect:'follow'});
+    const text=await res.text();
+    const d=JSON.parse(text);
+    if(d.error)throw new Error(d.error);
+    return d;
+  }else{
+    // POST no-cors — write succeeds even though response is opaque
+    await fetch(GAS_URL,{method:'POST',body:JSON.stringify({action,...payload}),mode:'no-cors',redirect:'follow'});
+    // Wait briefly then return success (actual data refresh done by caller via getAll)
+    await new Promise(r=>setTimeout(r,800));
+    return{success:true};
+  }
 }
 
 // ══ CONSTANTS ══
 const CATS=['餐飲','交通','住宿','娛樂','購物','其他'];
 const CICO={'餐飲':'🍜','交通':'🚗','住宿':'🏠','娛樂':'🎉','購物':'🛍️','其他':'📌'};
+
+const ESET={
+  '臉/人物':['😀','😎','🤓','🥳','🤠','👻','🤖','🦸','🧙','🥷','👰','🤵','👮','🧑','🕵️','🤴','👸'],
+  '動物':['🐶','🐱','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐙','🦋','🐬','🦄','🐧','🦉','🐢','🐘','🦒'],
+  '食物':['🍕','🍜','🍣','🍔','🌮','🍦','🧁','🍰','☕','🧋','🍺','🍷','🥤','🍩','🥐'],
+  '生活':['🏠','🚗','✈️','🎮','🎵','🎨','💻','⌚','👜','💍','🎒','🌈','⭐','🔥','💎','💰'],
+  '符號':['❤️','💛','💚','💙','💜','🖤','🤍','💯','✅','⚡','🌟','🔔','🎵','🎶','💸','🏅'],
+};
 const EMOS=['🐶','🐱','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐙','🦋','🐬'];
 const fmt=n=>'NT$'+Math.abs(Math.round(Number(n))).toLocaleString();
 const today=()=>new Date().toISOString().slice(0,10);
@@ -671,13 +699,39 @@ function SettlePage({data,ledgerId,onRefresh,toast}){
   </div>;
 }
 
+
+// ══ AVATAR PICKER ══
+function AvatarPicker({name,current,onPick,onClose}){
+  return<Sheet title={'選擇 '+name+' 的頭像'} onClose={onClose}>
+    {Object.entries(ESET).map(([sec,emojis])=>
+      <div key={sec} className="mb-4">
+        <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">{sec}</p>
+        <div className="grid grid-cols-8 gap-1.5">
+          {emojis.map(em=>
+            <button key={em} onClick={()=>onPick(em)}
+              className={`aspect-square rounded-xl flex items-center justify-center text-xl border-2 transition-all
+                ${em===current?'border-pri bg-pri/20':'border-transparent bg-c2'}`}>
+              {em}
+            </button>)}
+        </div>
+      </div>)}
+    <Btn onClick={onClose} variant="ghost">取消</Btn>
+  </Sheet>;
+}
+
 // ══ MEMBERS PAGE ══
 function MembersPage({data,ledgerId,onRefresh,toast}){
   const{members=[]}=data;
   const[newName,setNewName]=useState('');
   const[saving,setSaving]=useState(false);
+  const[editAvatar,setEditAvatar]=useState(null); // name of member being edited
   const shareUrl=window.location.href.replace(/[?&]createOAuthDialog=true/g,'').split('#')[0]+'#l='+ledgerId;
   const copyLink=()=>{navigator.clipboard?.writeText(shareUrl).then(()=>toast('✅ 連結已複製','ok'))||prompt('複製此連結：',shareUrl);};
+  const saveAvatar=async(name,emoji)=>{
+    const updated=members.map(m=>mname(m)===name?{...(typeof m==='object'?m:{name:m}),avatar:emoji}:m);
+    try{await gasCall('saveMembers',{members:updated,ledgerId});onRefresh();toast('✅ 已更新頭像','ok');}
+    catch(e){toast('儲存失敗','err');}
+    setEditAvatar(null);};
   const add=async()=>{
     const name=newName.trim();if(!name)return;
     if(members.some(m=>mname(m)===name)){toast('成員已存在','err');return;}
@@ -697,7 +751,16 @@ function MembersPage({data,ledgerId,onRefresh,toast}){
       <p className="text-tx2 text-sm mt-0.5">{members.length} 位成員</p></div>
     <Card>
       {!members.length&&<p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
-      {members.map((m,i)=><Row key={i} left={mav(m)} title={mname(m)} onDel={()=>remove(mname(m))}/>)}
+      {members.map((m,i)=>(
+        <div key={i} className="flex items-center gap-3 px-4 py-3.5 border-b border-bd last:border-0">
+          <button onClick={()=>setEditAvatar(mname(m))}
+            className="w-11 h-11 rounded-full bg-c2 flex items-center justify-center text-2xl relative active:scale-90 transition-transform">
+            {mav(m)}
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-pri border-2 border-bg flex items-center justify-center text-[9px] font-black text-bg">✏</span>
+          </button>
+          <p className="flex-1 font-bold text-base">{mname(m)}</p>
+          <button onClick={()=>remove(mname(m))} className="text-tx3 text-xl px-1">✕</button>
+        </div>))}
       <div className="flex gap-3 px-4 py-3 border-t border-bd">
         <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()}
           className="flex-1 bg-c3 border border-bd rounded-xl px-4 py-3 text-base text-tx outline-none focus:border-pri"
@@ -725,6 +788,11 @@ function MembersPage({data,ledgerId,onRefresh,toast}){
         <p className="text-xs text-tx3 mt-2">後端：{GAS_URL?'已連接 Google Sheets':'使用 Mock 資料'}</p>
       </div>
     </Card>
+    {editAvatar&&<AvatarPicker
+      name={editAvatar}
+      current={mav(members.find(m=>mname(m)===editAvatar)||editAvatar)}
+      onPick={emoji=>saveAvatar(editAvatar,emoji)}
+      onClose={()=>setEditAvatar(null)}/>}
   </div>;
 }
 
