@@ -50,25 +50,39 @@ const GAS_URL='https://script.google.com/macros/s/AKfycbxMcktk_mIHMe8yrTCat0-1oW
 // GAS CORS 解決方案：全部用 GET + URL params
 // 原因：GAS POST 會 redirect → body 丟失 → 寫入失敗
 // GET 不 preflight，CORS header 在 final response 上，完全正常運作
-// READ = GET (no CORS preflight), WRITE = POST no-cors
+// ── API: CORS 解法 ──
+// GAS redirect 會讓 CORS header 消失，用 JSONP 繞過
+// Writes 用 no-cors POST（寫入成功，回應 opaque 沒差）
+// Reads 用 JSONP（script tag，完全不受 CORS 限制）
+function gasCallJsonp(url){
+  return new Promise((resolve,reject)=>{
+    const cb='_gc'+Date.now();
+    const s=document.createElement('script');
+    const t=setTimeout(()=>{cleanup();reject(new Error('JSONP timeout'));},12000);
+    const cleanup=()=>{delete window[cb];document.head.removeChild(s);clearTimeout(t);};
+    window[cb]=data=>{cleanup();resolve(data);};
+    s.src=url+'&callback='+cb;
+    s.onerror=()=>{cleanup();reject(new Error('Failed to fetch'));};
+    document.head.appendChild(s);
+  });
+}
+
 const READ_ACTIONS=new Set(['getAll','getLedgers','getSettlements']);
 async function gasCall(action,payload={}){
   if(!GAS_URL) throw new Error('未設定 GAS_URL');
   if(READ_ACTIONS.has(action)){
-    // GET — safe cross-origin without preflight
+    // JSONP GET — no CORS restriction at all
     const p={action};
-    Object.entries(payload).forEach(([k,v])=>{p[k]=typeof v==='object'?JSON.stringify(v):String(v);});
-    const qs=Object.entries(p).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
-    const res=await fetch(GAS_URL+'?'+qs,{redirect:'follow'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const text=await res.text();
-    const d=JSON.parse(text);
-    if(d&&d.error)throw new Error(d.error);
-    return d;
+    Object.entries(payload).forEach(([k,v])=>{
+      p[k]=typeof v==='object'?JSON.stringify(v):String(v);
+    });
+    const qs=Object.entries(p).map(([k,v])=>
+      encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
+    return await gasCallJsonp(GAS_URL+'?'+qs);
   }else{
-    // POST no-cors — write goes through, response opaque (that's OK)
+    // no-cors POST — write succeeds, response opaque = OK
     fetch(GAS_URL,{method:'POST',body:JSON.stringify({action,...payload}),mode:'no-cors'});
-    await new Promise(r=>setTimeout(r,1300));
+    await new Promise(r=>setTimeout(r,1400));
     return{success:true};
   }
 }
