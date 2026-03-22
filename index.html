@@ -182,18 +182,20 @@ function SectionHeader({title,action,onAction}){
 
 // ══ HOME PAGE ══
 function HomePage({data,onGoPage,ledgerName,onBack}){
+  const activeExp=data.activeExpenses||data.expenses||[];
   const{expenses=[],members=[],settlement={},settles=[]}=data;
   const{balance={},transactions=[]}=settlement;
-  const total=expenses.reduce((s,e)=>s+parseFloat(e.amount),0);
+  // Use activeExp (post-settle) for financial stats; expenses for record count
+  const total=activeExp.reduce((s,e)=>s+parseFloat(e.amount),0);
   const mo=new Date().toISOString().slice(0,7);
   const wa=new Date(Date.now()-7*864e5).toISOString().slice(0,10);
-  const mT=expenses.filter(e=>(e.date||'').startsWith(mo)).reduce((s,e)=>s+parseFloat(e.amount),0);
-  const wT=expenses.filter(e=>(e.date||'')>=wa).reduce((s,e)=>s+parseFloat(e.amount),0);
+  const mT=activeExp.filter(e=>(e.date||'').startsWith(mo)).reduce((s,e)=>s+parseFloat(e.amount),0);
+  const wT=activeExp.filter(e=>(e.date||'')>=wa).reduce((s,e)=>s+parseFloat(e.amount),0);
 
   // category stats
   const catTotals={};
   CATS.forEach(c=>catTotals[c]=0);
-  expenses.forEach(e=>{const c=e.category||'其他';if(catTotals[c]!==undefined)catTotals[c]+=parseFloat(e.amount)||0;});
+  activeExp.forEach(e=>{const c=e.category||'其他';if(catTotals[c]!==undefined)catTotals[c]+=parseFloat(e.amount)||0;});
   const catRows=CATS.filter(c=>catTotals[c]>0).sort((a,b)=>catTotals[b]-catTotals[a]);
 
   return<div className="pb-nav">
@@ -209,7 +211,7 @@ function HomePage({data,onGoPage,ledgerName,onBack}){
       <p className="text-xs font-bold text-tx2 uppercase tracking-widest mb-1">群組累計支出</p>
       <p className="text-5xl font-black tracking-tight">{fmt(total)}</p>
       <div className="flex gap-3 mt-3">
-        {[{l:'本月',v:fmt(mT)},{l:'近7天',v:fmt(wT)},{l:'筆數',v:expenses.length+'筆'}].map(s=>
+        {[{l:'本月',v:fmt(mT)},{l:'近7天',v:fmt(wT)},{l:'本期',v:activeExp.length+'筆'}].map(s=>
           <div key={s.l} className="flex-1 bg-c1 rounded-2xl p-3 border border-bd text-center">
             <p className="font-black text-sm">{s.v}</p>
             <p className="text-xs text-tx3 mt-0.5">{s.l}</p>
@@ -281,7 +283,7 @@ function HomePage({data,onGoPage,ledgerName,onBack}){
     {members.length>0&&expenses.length>0&&(()=>{
       const payTotals={};
       members.forEach(m=>payTotals[mname(m)]=0);
-      expenses.forEach(e=>{if(payTotals[e.payer]!==undefined)payTotals[e.payer]+=parseFloat(e.amount)||0;});
+      activeExp.forEach(e=>{if(payTotals[e.payer]!==undefined)payTotals[e.payer]+=parseFloat(e.amount)||0;});
       const sorted=members.slice().sort((a,b)=>(payTotals[mname(b)]||0)-(payTotals[mname(a)]||0));
       return<>
         <SectionHeader title="個人付款統計"/>
@@ -829,11 +831,12 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
 // ══ SETTLE PAGE ══
 function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack,onLocalSettle}){
   const{members=[],expenses=[],settlement={},settles=[]}=data;
+  const activeExp=data.activeExpenses||data.expenses||[];
   const{balance={},transactions=[]}=settlement;
   const[showDetail,setShowDetail]=useState(null);
   const doSettle=async()=>{
     const note=prompt('結清備註（可留空）','');if(note===null)return;
-    const snap={transactions,expense_count:expenses.length,
+    const snap={transactions,expense_count:activeExp.length,
       balances:Object.entries(balance).map(([p,a])=>({person:p,amount:Math.round(a)}))};
     try{
       await gasCall('addSettle',{data:{note:note||'結清 '+new Date().toLocaleDateString('zh-TW'),settled_at:new Date().toISOString(),snapshot:snap},ledgerId});
@@ -1191,8 +1194,18 @@ function App(){
   const load=useCallback(async()=>{
     if(screen!=='ledger')return;
     try{const d=await gasCall('getAll',{ledgerId});
-      const settle=calcSettle(d.expenses||[],d.members||[]);
-      setData({...d,settlement:d.settlement&&Object.keys(d.settlement.balance||{}).length?d.settlement:settle,settles:d.settles||[]});
+      // Use server-calculated settlement (based on post-settle expenses)
+      // Fall back to local calc if needed
+      const activeExp=d.activeExpenses||d.expenses||[];
+      const settle=calcSettle(activeExp,d.members||[]);
+      const settlement=d.settlement&&Object.keys(d.settlement.balance||{}).length?d.settlement:settle;
+      setData({
+        ...d,
+        expenses:d.expenses||[],          // full list for records page
+        activeExpenses:activeExp,          // post-settle for stats
+        settlement,
+        settles:d.settles||[]
+      });
     }catch(e){showToast('載入失敗: '+e.message,'err');}
     finally{setLoading(false);}
   },[ledgerId,screen]);
