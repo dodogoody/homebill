@@ -269,6 +269,34 @@ function HomePage({data,onGoPage,ledgerName,onBack}){
       })}</Card>
     </>}
 
+    {/* Per-member spending stats */}
+    {members.length>0&&expenses.length>0&&(()=>{
+      const payTotals={};
+      members.forEach(m=>payTotals[mname(m)]=0);
+      expenses.forEach(e=>{if(payTotals[e.payer]!==undefined)payTotals[e.payer]+=parseFloat(e.amount)||0;});
+      const sorted=members.slice().sort((a,b)=>(payTotals[mname(b)]||0)-(payTotals[mname(a)]||0));
+      return<>
+        <SectionHeader title="個人付款統計"/>
+        <Card>{sorted.map((m,i)=>{
+          const n=mname(m);const amt=payTotals[n]||0;
+          const pct=total>0?Math.round(amt/total*100):0;
+          return<div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-bd last:border-0">
+            <div className="w-10 h-10 rounded-full bg-c2 flex items-center justify-center text-xl flex-shrink-0">{mav(m)}</div>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between mb-1">
+                <span className="text-sm font-bold">{n}</span>
+                <span className="text-sm font-bold text-tx2">{pct}%</span>
+              </div>
+              <div className="h-1.5 bg-bd rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{width:pct+'%',background:'#3498db'}}/>
+              </div>
+            </div>
+            <span className="text-sm font-black text-right w-20 flex-shrink-0">{fmt(amt)}</span>
+          </div>;
+        })}</Card>
+      </>;
+    })()}
+
     {members.length===0&&<Card className="m-4">
       <div className="py-10 text-center">
         <p className="text-5xl mb-3">👥</p>
@@ -430,7 +458,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
 }
 
 // ══ IMPORT SHEET ══
-function ImportSheet({members,ledgerId,onDone,toast}){
+function ImportSheet({members,ledgerId,onDone,toast,existingExpenses=[]}){
   const[tab,setTab]=useState('file');
   const[rows,setRows]=useState([]);
   const[cols,setCols]=useState([]);
@@ -492,9 +520,19 @@ function ImportSheet({members,ledgerId,onDone,toast}){
     }};
   const setData=({cols:cs,rows:rs})=>{if(!cs.length){toast('找不到有效資料','err');return;}
     setCols(cs);const m=autoDetect(cs);setColMap(m);
+    const existingSet=new Set(existingExpenses.map(e=>`${e.date}|${e.description}|${Math.round(parseFloat(e.amount))}`));
     const filtered=m.amount>=0?rs.filter(r=>{const v=String(r[m.amount]||'').replace(/,/g,'').replace(/[^0-9.\-]/g,'');return Math.abs(parseFloat(v)||0)>0&&String(r[m.amount]).trim()!=='-';})
-      .map(r=>{const v=String(r[m.amount]||'').replace(/,/g,'').replace(/[^0-9.\-]/g,'');r[m.amount]=Math.abs(parseFloat(v)||0);r._chk=true;r._cat=guesscat(String(r[m.desc>=0?m.desc:1]||''));return r;})
+      .map(r=>{
+        const v=String(r[m.amount]||'').replace(/,/g,'').replace(/[^0-9.\-]/g,'');
+        r[m.amount]=Math.abs(parseFloat(v)||0);
+        const dt=normDate(String(r[m.date>=0?m.date:0]||'').trim());
+        const desc=String(r[m.desc>=0?m.desc:1]||'').trim();
+        const key=`${dt}|${desc}|${Math.round(r[m.amount])}`;
+        r._dup=existingSet.has(key);r._chk=!r._dup;
+        r._cat=guesscat(desc);return r;})
       :rs.map(r=>{r._chk=true;r._cat='其他';return r;});
+    const dupCount=filtered.filter(r=>r._dup).length;
+    if(dupCount>0)toast(`⚠️ 發現 ${dupCount} 筆重複，已自動取消勾選`,'');
     setRows(filtered);};
   const doAiOcr=async file=>{
     if(!aiKey){toast('請填入 API Key','err');return;}
@@ -525,7 +563,16 @@ function ImportSheet({members,ledgerId,onDone,toast}){
         const m=result.match(/\[[\s\S]*\]/);if(!m)throw new Error('AI無法識別');
         const items=JSON.parse(m[0]);
         setCols(['date','description','amount']);setColMap({date:0,desc:1,amount:2});
-        setRows(items.filter(x=>x.amount>0).map(x=>{const row=[normDate(String(x.date)),x.description,x.amount];row._chk=true;row._cat=guesscat(x.description);return row;}));
+        // Check for duplicates against existing expenses
+        const existingSet=new Set(existingExpenses.map(e=>`${e.date}|${e.description}|${Math.round(parseFloat(e.amount))}`));
+        const newRows=items.filter(x=>x.amount>0).map(x=>{
+          const row=[normDate(String(x.date)),x.description,x.amount];
+          const key=`${row[0]}|${row[1]}|${Math.round(row[2])}`;
+          row._chk=!existingSet.has(key);row._dup=existingSet.has(key);
+          row._cat=guesscat(x.description);return row;});
+        const dupCount=newRows.filter(r=>r._dup).length;
+        if(dupCount>0)toast(`⚠️ 發現 ${dupCount} 筆重複，已自動取消勾選`,'');
+        setRows(newRows);
       }catch(e){toast('AI 失敗: '+e.message,'err');}
       finally{setAiLoading(false);}
     };reader.readAsDataURL(file);};
@@ -628,22 +675,36 @@ function ImportSheet({members,ledgerId,onDone,toast}){
           {!aiLoading&&<input type="file" accept="image/*,.pdf" className="hidden" onChange={e=>e.target.files[0]&&doAiOcr(e.target.files[0])}/>}
         </label>:
         <div>
-          <p className="text-sm text-tx2 mb-2">識別到 {rows.length} 筆</p>
-          <div className="max-h-48 overflow-y-auto bg-c2 rounded-xl mb-3">
-            {rows.map((r,i)=><div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-bd last:border-0">
-              <input type="checkbox" checked={r._chk!==false} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,_chk:e.target.checked}:x))} className="w-4 h-4 flex-shrink-0"/>
-              <span className="text-xs text-tx2 w-16 flex-shrink-0">{String(r[0]).slice(5)}</span>
-              <span className="flex-1 text-sm truncate">{r[1]}</span>
-              <span className="text-sm font-bold">{fmt(r[2])}</span>
-            </div>)}
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-tx2">識別到 <b>{rows.length}</b> 筆，已選 <b>{rows.filter(r=>r._chk!==false).length}</b> 筆</p>
+            <div className="flex gap-2">
+              <button onClick={()=>setRows(rs=>rs.map(x=>({...x,_chk:true})))} className="text-xs text-pri font-bold">全選</button>
+              <button onClick={()=>setRows([])} className="text-xs text-tx3">重試</button>
+            </div>
+          </div>
+          <div className="max-h-52 overflow-y-auto bg-c2 rounded-xl mb-3 border border-bd">
+            {rows.map((r,i)=>{
+              const isDup=r._dup;
+              return<div key={i} className={`flex items-center gap-2 px-3 py-2.5 border-b border-bd last:border-0 ${isDup?'opacity-50':''}`}>
+                <input type="checkbox" checked={r._chk!==false} disabled={isDup}
+                  onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,_chk:e.target.checked}:x))} className="w-4 h-4 flex-shrink-0"/>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate">{r[1]}</p>
+                  <p className="text-xs text-tx3">{String(r[0]).slice(5)} {isDup?'· ⚠️ 重複':''}</p>
+                </div>
+                <span className="text-sm font-bold flex-shrink-0">{fmt(r[2])}</span>
+              </div>;
+            })}
           </div>
           <div className="flex gap-2 mb-3">
             <select value={payer} onChange={e=>setPayer(e.target.value)}
               className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2 text-sm text-tx outline-none">
               {members.map(m=><option key={mname(m)}>{mname(m)}</option>)}
             </select>
-            <button onClick={()=>setRows([])} className="px-4 bg-c2 border border-bd rounded-xl text-sm text-tx2">重試</button>
           </div>
+          {rows.some(r=>r._dup)&&<div className="bg-red/10 border border-red/30 rounded-xl px-3 py-2 mb-3 text-xs text-red">
+            ⚠️ 灰色項目與現有帳目重複，已自動取消勾選
+          </div>}
           <Btn onClick={doImport}>⬆️ 匯入選取的帳目</Btn>
         </div>}
     </>}
@@ -659,9 +720,13 @@ function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
     const note=prompt('結清備註（可留空）','');if(note===null)return;
     const snap={transactions,expense_count:expenses.length,
       balances:Object.entries(balance).map(([p,a])=>({person:p,amount:Math.round(a)}))};
-    try{await gasCall('addSettle',{data:{note:note||'結清 '+new Date().toLocaleDateString('zh-TW'),settled_at:new Date().toISOString(),snapshot:snap},ledgerId});
-      toast('✅ 結清紀錄已儲存','ok');onRefresh();}
-    catch(e){toast('儲存失敗: '+e.message,'err');}};
+    try{
+      await gasCall('addSettle',{data:{note:note||'結清 '+new Date().toLocaleDateString('zh-TW'),settled_at:new Date().toISOString(),snapshot:snap},ledgerId});
+      toast('✅ 結清紀錄已儲存，重新計算中…','ok');
+      // Force fresh reload so settlement recalculates
+      await new Promise(r=>setTimeout(r,1500));
+      await onRefresh();
+    }catch(e){toast('儲存失敗: '+e.message,'err');}};
   const delSettle=async id=>{
     if(!confirm('確定刪除？'))return;
     try{await gasCall('deleteSettle',{id,ledgerId});toast('已刪除');onRefresh();}
@@ -752,9 +817,19 @@ function MembersPage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
   const{members=[]}=data;
   const[newName,setNewName]=useState('');
   const[saving,setSaving]=useState(false);
-  const[editAvatar,setEditAvatar]=useState(null); // name of member being edited
+  const[editAvatar,setEditAvatar]=useState(null);
+  const[editName,setEditName]=useState(''); // name of member being renamed
+  const[editNameVal,setEditNameVal]=useState('');
   const shareUrl=window.location.href.replace(/[?&]createOAuthDialog=true/g,'').split('#')[0]+'#l='+ledgerId;
   const copyLink=()=>{navigator.clipboard?.writeText(shareUrl).then(()=>toast('✅ 連結已複製','ok'))||prompt('複製此連結：',shareUrl);};
+  const saveName=async(oldName)=>{
+    const newName=editNameVal.trim();
+    setEditName('');
+    if(!newName||newName===oldName)return;
+    if(members.some(m=>mname(m)===newName)){toast('名稱已存在','err');return;}
+    const updated=members.map(m=>mname(m)===oldName?{...(typeof m==='object'?m:{name:m}),name:newName}:m);
+    try{await gasCall('saveMembers',{members:updated,ledgerId});onRefresh();toast('✅ 已更新名稱','ok');}
+    catch(e){toast('儲存失敗','err');};};
   const saveAvatar=async(name,emoji)=>{
     const updated=members.map(m=>mname(m)===name?{...(typeof m==='object'?m:{name:m}),avatar:emoji}:m);
     try{await gasCall('saveMembers',{members:updated,ledgerId});onRefresh();toast('✅ 已更新頭像','ok');}
@@ -783,16 +858,25 @@ function MembersPage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
       <p className="text-tx2 text-sm mt-0.5">{members.length} 位成員</p></div>
     <Card>
       {!members.length&&<p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
-      {members.map((m,i)=>(
-        <div key={i} className="flex items-center gap-3 px-4 py-3.5 border-b border-bd last:border-0">
-          <button onClick={()=>setEditAvatar(mname(m))}
-            className="w-11 h-11 rounded-full bg-c2 flex items-center justify-center text-2xl relative active:scale-90 transition-transform">
+      {members.map((m,i)=>{
+        const n=mname(m);
+        const isEditing=editName===n;
+        return<div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-bd last:border-0">
+          <button onClick={()=>setEditAvatar(n)}
+            className="w-11 h-11 rounded-full bg-c2 flex items-center justify-center text-2xl relative active:scale-90 transition-transform flex-shrink-0">
             {mav(m)}
             <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-pri border-2 border-bg flex items-center justify-center text-[9px] font-black text-bg">✏</span>
           </button>
-          <p className="flex-1 font-bold text-base">{mname(m)}</p>
-          <button onClick={()=>remove(mname(m))} className="text-tx3 text-xl px-1">✕</button>
-        </div>))}
+          {isEditing
+            ?<input autoFocus value={editNameVal} onChange={e=>setEditNameVal(e.target.value)}
+                onBlur={()=>saveName(n)} onKeyDown={e=>{if(e.key==='Enter')saveName(n);if(e.key==='Escape')setEditName('');}}
+                className="flex-1 bg-c3 border border-pri rounded-xl px-3 py-2 text-base font-bold text-tx outline-none"/>
+            :<div className="flex-1 flex items-center gap-2 min-w-0">
+              <p className="font-bold text-base flex-1 truncate">{n}</p>
+              <button onClick={()=>{setEditName(n);setEditNameVal(n);}} className="text-tx3 text-sm px-1">✏️</button>
+            </div>}
+          <button onClick={()=>remove(n)} className="text-tx3 text-xl px-1 flex-shrink-0">✕</button>
+        </div>;})}
       <div className="flex gap-3 px-4 py-3 border-t border-bd">
         <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()}
           className="flex-1 bg-c3 border border-bd rounded-xl px-4 py-3 text-base text-tx outline-none focus:border-pri"
@@ -1014,7 +1098,7 @@ function App(){
     {page==='settle'&&<SettlePage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
     {page==='members'&&<MembersPage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
     {showAdd&&<AddPage members={data.members} onSave={handleAdd} onClose={()=>setShowAdd(false)} toast={showToast}/>}
-    {showImport&&<ImportSheet members={data.members} ledgerId={ledgerId} onDone={()=>{setShowImport(false);load();}} toast={showToast}/>}
+    {showImport&&<ImportSheet members={data.members} ledgerId={ledgerId} existingExpenses={data.expenses||[]} onDone={()=>{setShowImport(false);load();}} toast={showToast}/>}
     <Nav page={page} onNav={setPage} onAdd={()=>setShowAdd(true)}/>
     {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
   </div>;
