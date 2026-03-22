@@ -785,9 +785,9 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
     setRows(newRows);setAiLoading(false);
   };
   const doAiOcr=async file=>{
-    // Allow if backend has key (keySource==='backend') OR local key is set
-    if(keySource!=='backend'&&!aiKey){toast('請填入 API Key 或切換至後台 Key','err');return;}
     setAiLoading(true);
+    // Key validation: backend key or local key required
+    // If neither exists, GAS will return a descriptive error
     const reader=new FileReader();
     reader.onload=async e=>{
       const b64=e.target.result.split(',')[1];
@@ -1021,7 +1021,11 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
               ?<><p className="text-4xl mb-2">⏳</p><p className="text-sm text-tx2">AI 分析中，請稍候…</p><p className="text-xs text-tx3 mt-1">PDF 可能需要較長時間</p></>
               :<><p className="text-4xl mb-2">🖼️</p>
                 <p className="text-sm font-semibold text-tx2">點擊上傳帳單截圖或 PDF</p>
-                <p className="text-xs text-tx3 mt-1">.jpg .png .pdf（支援加密 PDF）</p></>}
+                <p className="text-xs text-tx3 mt-1">.jpg .png .pdf（支援加密 PDF）</p>
+                {(keySource==='backend'||(backendHasKey&&backendHasKey[aiProv]))?
+                  <p className="text-xs text-grn mt-2 font-bold">🔒 後台 Key 已就緒</p>:
+                  (!aiKey&&<p className="text-xs text-red mt-2">⚠ 請先設定 API Key</p>)}
+                </>}
             {!aiLoading&&<input type="file" accept="image/*,.pdf" className="hidden" onChange={e=>e.target.files[0]&&doAiOcr(e.target.files[0])}/>}
           </label>
           {/* PDF password input */}
