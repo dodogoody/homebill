@@ -42,6 +42,8 @@ select option{background:#1e1e28}
 const {useState,useEffect,useCallback,useRef,useMemo}=React;
 
 // ══ CONFIG ══
+// ⚠️ 每次「建立新版本重新部署」URL 不變，只有「建立全新部署」才會換 URL
+// 所以只要用同一個部署 ID，不需要每次更新
 const GAS_URL='https://script.google.com/macros/s/AKfycbxMcktk_mIHMe8yrTCat0-1oWfNuVjvzTfru2CMh8aY9rSkLxU2yeU9IJxTSuk7JBxb1w/exec';
 
 // ══ API ══
@@ -159,7 +161,7 @@ function SectionHeader({title,action,onAction}){
 }
 
 // ══ HOME PAGE ══
-function HomePage({data,onGoPage}){
+function HomePage({data,onGoPage,ledgerName,onBack}){
   const{expenses=[],members=[],settlement={},settles=[]}=data;
   const{balance={},transactions=[]}=settlement;
   const total=expenses.reduce((s,e)=>s+parseFloat(e.amount),0);
@@ -177,7 +179,13 @@ function HomePage({data,onGoPage}){
   return<div className="pb-nav">
     <div className="pt-safe"/>
     {/* Hero */}
-    <div className="px-5 pt-4 pb-2">
+    <div className="px-4 pt-3 pb-1 flex items-center gap-3">
+      <button onClick={onBack} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2 text-lg flex-shrink-0">←</button>
+      <div className="flex-1 min-w-0">
+        <p className="font-black text-base truncate">{ledgerName||'帳本'}</p>
+      </div>
+    </div>
+    <div className="px-5 pt-2 pb-2">
       <p className="text-xs font-bold text-tx2 uppercase tracking-widest mb-1">群組累計支出</p>
       <p className="text-5xl font-black tracking-tight">{fmt(total)}</p>
       <div className="flex gap-3 mt-3">
@@ -374,7 +382,7 @@ function AddPage({members,onSave,onClose,toast}){
 }
 
 // ══ RECORDS PAGE ══
-function RecordsPage({data,onDelete,onImport}){
+function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
   const{expenses=[],members=[]}=data;
   const slb=p=>{
     if(Array.isArray(p))return p.length===members.length?'所有人平分':p.join('、')+' 平分';
@@ -386,10 +394,14 @@ function RecordsPage({data,onDelete,onImport}){
 
   return<div className="pb-nav">
     <div className="pt-safe"/>
-    <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-      <div><h1 className="text-2xl font-black">帳目</h1>
-        <p className="text-tx2 text-sm mt-0.5">共 {expenses.length} 筆</p></div>
-      <button onClick={onImport} className="px-4 py-2 bg-c2 rounded-2xl text-sm font-bold text-tx2 border border-bd">📥 匯入</button>
+    <div className="px-4 pt-3 pb-1 flex items-center gap-3">
+      <button onClick={onBack} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2 text-lg flex-shrink-0">←</button>
+      <p className="font-black text-base flex-1 truncate">{ledgerName||'帳目'}</p>
+      <button onClick={onImport} className="px-3 py-2 bg-c2 rounded-xl text-sm font-bold text-tx2 border border-bd">📥 匯入</button>
+    </div>
+    <div className="px-5 pt-2 pb-1">
+      <h1 className="text-2xl font-black">帳目</h1>
+      <p className="text-tx2 text-sm mt-0.5">共 {expenses.length} 筆</p>
     </div>
     {!expenses.length&&<div className="py-20 text-center"><p className="text-5xl mb-3">📭</p>
       <p className="font-bold text-lg text-tx2">還沒有帳目</p></div>}
@@ -627,7 +639,7 @@ function ImportSheet({members,ledgerId,onDone,toast}){
 }
 
 // ══ SETTLE PAGE ══
-function SettlePage({data,ledgerId,onRefresh,toast}){
+function SettlePage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
   const{members=[],expenses=[],settlement={},settles=[]}=data;
   const{balance={},transactions=[]}=settlement;
   const[showDetail,setShowDetail]=useState(null);
@@ -644,7 +656,11 @@ function SettlePage({data,ledgerId,onRefresh,toast}){
     catch(e){toast('刪除失敗','err');}};
   return<div className="pb-nav">
     <div className="pt-safe"/>
-    <div className="px-5 pt-4 pb-2"><h1 className="text-2xl font-black">結算</h1></div>
+    <div className="px-4 pt-3 pb-1 flex items-center gap-3">
+      <button onClick={onBack} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2 text-lg flex-shrink-0">←</button>
+      <p className="font-black text-base flex-1 truncate">{ledgerName||'結算'}</p>
+    </div>
+    <div className="px-5 pt-2 pb-2"><h1 className="text-2xl font-black">結算</h1></div>
     <SectionHeader title="各人餘額"/>
     <Card>{!members.length&&<p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
       {members.map((m,i)=>{const a=balance[mname(m)]||0;
@@ -720,7 +736,7 @@ function AvatarPicker({name,current,onPick,onClose}){
 }
 
 // ══ MEMBERS PAGE ══
-function MembersPage({data,ledgerId,onRefresh,toast}){
+function MembersPage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
   const{members=[]}=data;
   const[newName,setNewName]=useState('');
   const[saving,setSaving]=useState(false);
@@ -747,7 +763,11 @@ function MembersPage({data,ledgerId,onRefresh,toast}){
     catch(e){toast('移除失敗','err');}};
   return<div className="pb-nav">
     <div className="pt-safe"/>
-    <div className="px-5 pt-4 pb-2"><h1 className="text-2xl font-black">成員</h1>
+    <div className="px-4 pt-3 pb-1 flex items-center gap-3">
+      <button onClick={onBack} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2 text-lg flex-shrink-0">←</button>
+      <p className="font-black text-base flex-1 truncate">{ledgerName||'成員'}</p>
+    </div>
+    <div className="px-5 pt-2 pb-2"><h1 className="text-2xl font-black">成員</h1>
       <p className="text-tx2 text-sm mt-0.5">{members.length} 位成員</p></div>
     <Card>
       {!members.length&&<p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
@@ -814,31 +834,143 @@ function Nav({page,onNav,onAdd}){
   </nav>;
 }
 
+// ══ LEDGER LIST PAGE ══
+const LEMOJI=['💰','✈️','🏖️','🏠','🎉','🍽️','🎮','📚','💼','🎸','🏋️','🚗','🌏','🎁','🌴','🏕️','🎭','🛒','☕','🎵'];
+
+function LedgerPage({onEnter,toast}){
+  const[ledgers,setLedgers]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[showNew,setShowNew]=useState(false);
+  const[newName,setNewName]=useState('');
+  const[newEmoji,setNewEmoji]=useState('💰');
+  const[editId,setEditId]=useState(null);
+  const[editName,setEditName]=useState('');
+  const[editEmoji,setEditEmoji]=useState('💰');
+  const[saving,setSaving]=useState(false);
+
+  const load=async()=>{
+    try{const d=await gasCall('getLedgers',{});
+      setLedgers(d.ledgers||[]);}
+    catch(e){toast('載入失敗: '+e.message,'err');}
+    finally{setLoading(false);}};
+  useEffect(()=>{load();},[]);
+
+  const create=async()=>{
+    if(!newName.trim()){toast('請輸入帳本名稱','err');return;}
+    setSaving(true);
+    try{await gasCall('createLedger',{name:newName.trim(),emoji:newEmoji});
+      await load();setShowNew(false);setNewName('');toast('✅ 已建立','ok');}
+    catch(e){toast('建立失敗','err');}finally{setSaving(false);}};
+
+  const save=async()=>{
+    if(!editName.trim()){toast('請輸入名稱','err');return;}
+    setSaving(true);
+    try{await gasCall('renameLedger',{id:editId,name:editName.trim(),emoji:editEmoji});
+      await load();setEditId(null);toast('✅ 已更新','ok');}
+    catch(e){toast('更新失敗','err');}finally{setSaving(false);}};
+
+  const del=async id=>{
+    if(!confirm('確定刪除此帳本？'))return;
+    try{await gasCall('deleteLedger',{id});await load();toast('已刪除');}
+    catch(e){toast('刪除失敗','err');}};
+
+  if(loading)return<div className="min-h-screen bg-bg flex items-center justify-center"><Spin/></div>;
+
+  return<div className="min-h-screen bg-bg pb-10">
+    <div className="pt-safe"/>
+    <div className="px-5 pt-6 pb-4">
+      <h1 className="text-3xl font-black">算帳啦 💰</h1>
+      <p className="text-tx2 text-sm mt-1">選擇或建立帳本</p>
+    </div>
+    <div className="px-4 mb-3">
+      {ledgers.map(l=>(
+        <div key={l.id} className="bg-c1 rounded-2xl border border-bd mb-3 overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-4 cursor-pointer active:opacity-70"
+            onClick={()=>onEnter(l.id,l.name)}>
+            <div className="w-12 h-12 rounded-2xl bg-c2 flex items-center justify-center text-2xl flex-shrink-0">{l.emoji||'💰'}</div>
+            <div className="flex-1 min-w-0">
+              <p className="font-black text-lg">{l.name}</p>
+              <p className="text-xs text-tx3 mt-0.5">點擊進入</p>
+            </div>
+            <button onClick={e=>{e.stopPropagation();setEditId(l.id);setEditName(l.name);setEditEmoji(l.emoji||'💰');}}
+              className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx3 text-base mr-1">✏️</button>
+            {l.id!=='default'&&<button onClick={e=>{e.stopPropagation();del(l.id);}}
+              className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx3 text-lg">🗑</button>}
+          </div>
+        </div>))}
+    </div>
+    <div className="px-4">
+      <button onClick={()=>setShowNew(true)}
+        className="w-full py-4 rounded-2xl border-2 border-dashed border-bd text-tx2 font-bold text-base flex items-center justify-center gap-2 active:opacity-70">
+        ＋ 新增帳本
+      </button>
+    </div>
+
+    {/* New ledger sheet */}
+    {showNew&&<Sheet title="新增帳本" onClose={()=>setShowNew(false)}>
+      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">選擇圖示</p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {LEMOJI.map(e=><button key={e} onClick={()=>setNewEmoji(e)}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border-2 ${newEmoji===e?'border-pri bg-pri/15':'border-bd bg-c2'}`}>{e}</button>)}
+      </div>
+      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">帳本名稱</p>
+      <input value={newName} onChange={e=>setNewName(e.target.value)}
+        onKeyDown={e=>e.key==='Enter'&&create()}
+        className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none mb-4"
+        placeholder="例：家庭開銷" maxLength={20} autoFocus/>
+      <Btn onClick={create} disabled={saving}>{saving?'建立中…':'建立帳本'}</Btn>
+    </Sheet>}
+
+    {/* Edit ledger sheet */}
+    {editId&&<Sheet title="編輯帳本" onClose={()=>setEditId(null)}>
+      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">選擇圖示</p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {LEMOJI.map(e=><button key={e} onClick={()=>setEditEmoji(e)}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border-2 ${editEmoji===e?'border-pri bg-pri/15':'border-bd bg-c2'}`}>{e}</button>)}
+      </div>
+      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">帳本名稱</p>
+      <input value={editName} onChange={e=>setEditName(e.target.value)}
+        className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none mb-4"
+        maxLength={20}/>
+      <Btn onClick={save} disabled={saving}>{saving?'儲存中…':'儲存'}</Btn>
+    </Sheet>}
+  </div>;
+}
+
 // ══ APP ══
 function App(){
+  const[screen,setScreen]=useState(()=>{
+    const h=location.hash;return h.startsWith('#l=')?'ledger':'list';});
+  const[ledgerId,setLedgerId]=useState(()=>{
+    const h=location.hash;return h.startsWith('#l=')?h.slice(3):'default';});
+  const[ledgerName,setLedgerName]=useState('帳本');
   const[page,setPage]=useState('home');
   const[showAdd,setShowAdd]=useState(false);
   const[showImport,setShowImport]=useState(false);
   const[data,setData]=useState({expenses:[],members:[],settlement:{balance:{},transactions:[]},settles:[]});
   const[loading,setLoading]=useState(true);
   const[toast,setToast]=useState(null);
-  const[ledgerId]=useState(()=>{const h=location.hash;return h.startsWith('#l=')?h.slice(3):'default';});
   const showToast=(msg,type='')=>setToast({msg,type});
 
+  const enterLedger=(id,name)=>{
+    setLedgerId(id);setLedgerName(name||'帳本');
+    location.hash='l='+id;setScreen('ledger');setPage('home');};
+  const backToList=()=>{setScreen('list');location.hash='';setLoading(true);};
+
   const load=useCallback(async()=>{
+    if(screen!=='ledger')return;
     try{const d=await gasCall('getAll',{ledgerId});
-      // Recalculate settlement locally to ensure freshness
       const settle=calcSettle(d.expenses||[],d.members||[]);
-      setData({...d,settlement:d.settlement||settle,settles:d.settles||[]});
+      setData({...d,settlement:d.settlement&&Object.keys(d.settlement.balance||{}).length?d.settlement:settle,settles:d.settles||[]});
     }catch(e){showToast('載入失敗: '+e.message,'err');}
     finally{setLoading(false);}
-  },[ledgerId]);
+  },[ledgerId,screen]);
 
-  useEffect(()=>{load();},[load]);
+  useEffect(()=>{if(screen==='ledger'){setLoading(true);load();}},[screen,ledgerId]);
   useEffect(()=>{
-    const t=setInterval(()=>{if(!document.hidden)load();},6000);
+    const t=setInterval(()=>{if(!document.hidden&&screen==='ledger')load();},6000);
     return()=>clearInterval(t);
-  },[load]);
+  },[load,screen]);
 
   const handleAdd=async expData=>{
     await gasCall('add',{data:expData,ledgerId});
@@ -847,13 +979,18 @@ function App(){
     try{await gasCall('delete',{id,ledgerId});await load();showToast('已刪除');}
     catch(e){showToast('刪除失敗','err');}};
 
+  if(screen==='list')return<>
+    <LedgerPage onEnter={enterLedger} toast={showToast}/>
+    {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
+  </>;
+
   if(loading)return<div className="min-h-screen bg-bg flex items-center justify-center"><Spin/></div>;
 
   return<div className="min-h-screen bg-bg text-tx">
-    {page==='home'&&<HomePage data={data} onGoPage={setPage}/>}
-    {page==='records'&&<RecordsPage data={data} onDelete={handleDelete} onImport={()=>setShowImport(true)}/>}
-    {page==='settle'&&<SettlePage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast}/>}
-    {page==='members'&&<MembersPage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast}/>}
+    {page==='home'&&<HomePage data={data} onGoPage={setPage} ledgerName={ledgerName} onBack={backToList}/>}
+    {page==='records'&&<RecordsPage data={data} onDelete={handleDelete} onImport={()=>setShowImport(true)} ledgerName={ledgerName} onBack={backToList}/>}
+    {page==='settle'&&<SettlePage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
+    {page==='members'&&<MembersPage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast} ledgerName={ledgerName} onBack={backToList}/>}
     {showAdd&&<AddPage members={data.members} onSave={handleAdd} onClose={()=>setShowAdd(false)} toast={showToast}/>}
     {showImport&&<ImportSheet members={data.members} ledgerId={ledgerId} onDone={()=>{setShowImport(false);load();}} toast={showToast}/>}
     <Nav page={page} onNav={setPage} onAdd={()=>setShowAdd(true)}/>
