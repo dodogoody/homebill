@@ -515,11 +515,28 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
   const groups={};
   activeList.forEach(e=>{const m=(e.date||'').slice(0,7);if(!groups[m])groups[m]=[];groups[m].push(e);});
 
+  const[editingExp,setEditingExp]=useState(null); // expense being edited
+  const[editNote,setEditNote]=useState('');
+  const[editCat,setEditCat]=useState('');
+  const saveExpEdit=async()=>{
+    if(!editingExp)return;
+    try{
+      fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'updateExpense',id:editingExp.id,note:editNote,category:editCat,ledgerId}),mode:'no-cors'});
+      // Update locally for instant feedback
+      setEditingExp(null);
+      toast('✅ 已更新','ok');
+      await new Promise(r=>setTimeout(r,1000));
+      onDelete&&onDelete('__refresh__'); // signal parent to reload (parent handles gracefully)
+    }catch(e){toast('更新失敗','err');}
+  };
+
   const ExpRow=({e,settled=false})=>(
     <div className={`flex gap-3 px-4 py-3.5 border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
-      <div className="w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0">
+      <button onClick={()=>{if(!settled){setEditCat(e.category||'其他');setEditNote(e.note||'');setEditingExp(e);}}}
+        className={`w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0 ${settled?'':'active:scale-90 transition-transform'}`}>
         {CICO[e.category]||'📌'}
-      </div>
+        {!settled&&<span style={{position:'absolute',fontSize:'8px',bottom:'1px',right:'1px',opacity:.7}}>✏</span>}
+      </button>
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2">
           <p className="font-semibold text-base leading-tight flex-1 truncate">{e.description}</p>
@@ -530,13 +547,15 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
           <span className="opacity-60">📝</span>{e.note}
         </p>}
       </div>
-      <div className="flex-shrink-0 text-right">
+      <div className="flex-shrink-0 text-right flex flex-col items-end gap-1">
         <p className="font-black text-base">{fmt(e.amount)}</p>
         {!settled&&<button onClick={()=>{if(confirm('確定刪除？'))onDelete(e.id);}}
-          className="text-tx3 text-sm mt-1">🗑</button>}
+          className="text-tx3 text-sm">🗑</button>}
       </div>
     </div>
   );
+
+
 
   return<div className="pb-nav">
     <div className="pt-safe"/>
@@ -576,6 +595,27 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack}){
         <Card className="opacity-80">{sg[mo].map(e=><ExpRow key={e.id} e={e} settled={true}/>)}</Card>
       </div>);
     })()}
+
+    {/* Edit expense sheet */}
+    {editingExp&&<Sheet title="編輯帳目" onClose={()=>setEditingExp(null)}>
+      <p className="text-sm text-tx2 mb-4 font-semibold truncate">{editingExp.description} · {fmt(editingExp.amount)}</p>
+      <div className="mb-5">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分類</label>
+        <div className="scroll-x">
+          {CATS.map(cat=><button key={cat} onClick={()=>setEditCat(cat)}
+            className={`flex-shrink-0 px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 whitespace-nowrap ${editCat===cat?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+            {CICO[cat]} {cat}
+          </button>)}
+        </div>
+      </div>
+      <div className="mb-5">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">備註</label>
+        <input type="text" value={editNote} onChange={e=>setEditNote(e.target.value)}
+          className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"
+          placeholder="新增或修改備註…"/>
+      </div>
+      <Btn onClick={saveExpEdit}>儲存更改</Btn>
+    </Sheet>}
   </div>;
 }
 
@@ -686,11 +726,26 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
             method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+effectiveKey},
             body:JSON.stringify({model:'gpt-4o',max_tokens:2000,messages:[{role:'user',content:[
               {type:'image_url',image_url:{url:`data:${mtype};base64,${b64}`}},{type:'text',text:prompt}]}]})});
-          const d=await res.json();if(d.error)throw new Error(d.error.message);
+          const d=await res.json();
+        if(d.error){
+          const msg=d.error.message||JSON.stringify(d.error);
+          if(d.error.code==='insufficient_quota'||msg.includes('quota')||msg.includes('exceeded'))
+            throw new Error('💳 API 額度已用完，請至 platform.openai.com 儲值');
+          if(d.error.code==='invalid_api_key'||msg.includes('api_key'))
+            throw new Error('🔑 API Key 無效，請確認是否正確');
+          throw new Error(msg);
+        }
           result=d.choices?.[0]?.message?.content||'';
         }else{
           const r=await gasCall('ocrImage',{apiKey:aiKey,base64:b64,mimeType:mtype,provider:'claude'});
-          if(r.error)throw new Error(r.error);
+          if(r.error){
+          const msg=r.error;
+          if(msg.includes('credit')||msg.includes('balance')||msg.includes('quota'))
+            throw new Error('💳 Claude API 額度不足，請至 console.anthropic.com 儲值');
+          if(msg.includes('api_key')||msg.includes('authentication'))
+            throw new Error('🔑 API Key 無效，請確認是否正確');
+          throw new Error(msg);
+        }
           const items=r.items||[];
           setCols(['date','description','amount']);
           setColMap({date:0,desc:1,amount:2});
@@ -713,20 +768,37 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
       }catch(e){toast('AI 失敗: '+e.message,'err');}
       finally{setAiLoading(false);}
     };reader.readAsDataURL(file);};
+  const[importing,setImporting]=useState(false);
+  const[importProgress,setImportProgress]=useState(0);
   const doImport=async()=>{
     const allParts=members.map(mname);
-    const toImport=rows.filter(r=>r._chk!==false);
+    const toImport=rows.filter(r=>r._chk!==false&&!r._dup);
     if(!toImport.length){toast('請選擇要匯入的資料','err');return;}
-    let ok=0;
-    for(const r of toImport){
-      const dt=normDate(String(r[colMap.date]||'').trim());
-      const desc=String(r[colMap.desc]||'').trim();
-      const amt=Math.abs(parseFloat(String(r[colMap.amount]||'').replace(/,/g,'').replace(/[^0-9.]/g,''))||0);
-      if(!amt||!desc)continue;
-      try{await gasCall('add',{data:{description:desc,amount:amt,payer,date:dt,category:r._cat||'其他',participants:allParts},ledgerId});ok++;}
-      catch(e){}
+    setImporting(true);setImportProgress(0);
+    let ok=0,fail=0;
+    for(let i=0;i<toImport.length;i++){
+      const r=toImport[i];
+      setImportProgress(Math.round((i+1)/toImport.length*100));
+      const dt=normDate(String(r[colMap.date>=0?colMap.date:0]||'').trim());
+      const desc=String(r[colMap.desc>=0?colMap.desc:1]||'').trim();
+      const amt=Math.abs(parseFloat(String(r[colMap.amount>=0?colMap.amount:2]||'').replace(/,/g,'').replace(/[^0-9.]/g,''))||0);
+      if(!amt||!desc){fail++;continue;}
+      // Final dedup check before writing
+      const key=`${dt}|${desc}|${Math.round(amt)}`;
+      const already=existingExpenses.some(e=>`${e.date}|${e.description}|${Math.round(parseFloat(e.amount))}`===key);
+      if(already){fail++;continue;}
+      try{
+        fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'add',data:{description:desc,amount:amt,payer,date:dt,category:r._cat||'其他',participants:allParts},ledgerId}),mode:'no-cors'});
+        ok++;
+        await new Promise(r=>setTimeout(r,180)); // stagger writes
+      }catch(e){fail++;}
     }
-    toast(`✅ 已匯入 ${ok} 筆`,'ok');onDone();};
+    await new Promise(r=>setTimeout(r,1200)); // wait for last write
+    setImporting(false);
+    const msg=`✅ 匯入完成：${ok} 筆成功${fail>0?' · '+fail+' 筆略過':''}`;
+    toast(msg,'ok');
+    onDone(); // auto-close
+  };
 
   return<Sheet title="匯入帳單" onClose={onClose}>
     {/* AI Key */}
@@ -821,7 +893,12 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
               <button onClick={e=>{e.stopPropagation();setRows(rs=>rs.filter((_,j)=>j!==i));}} className="text-tx3 text-base px-1">🗑</button>
             </div>;})}
         </div>
-        <Btn onClick={doImport}>⬆️ 匯入選取的帳目</Btn>
+        {importing?<div className="w-full py-4 rounded-2xl bg-pri/20 border border-pri text-center">
+          <p className="text-sm font-bold text-pri mb-2">匯入中 {importProgress}%</p>
+          <div className="h-2 bg-bd rounded-full overflow-hidden mx-4">
+            <div className="h-full bg-pri rounded-full transition-all" style={{width:importProgress+'%'}}/>
+          </div>
+        </div>:<Btn onClick={doImport}>⬆️ 匯入 {rows.filter(r=>r._chk!==false&&!r._dup).length} 筆帳目</Btn>}
       </div>}
     </>}
 
@@ -870,7 +947,12 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
           {rows.some(r=>r._dup)&&<div className="bg-red/10 border border-red/30 rounded-xl px-3 py-2 mb-3 text-xs text-red">
             ⚠️ 灰色項目與現有帳目重複，已自動取消勾選
           </div>}
-          <Btn onClick={doImport}>⬆️ 匯入選取的帳目</Btn>
+          {importing?<div className="w-full py-4 rounded-2xl bg-pri/20 border border-pri text-center">
+            <p className="text-sm font-bold text-pri mb-2">匯入中 {importProgress}%</p>
+            <div className="h-2 bg-bd rounded-full overflow-hidden mx-4">
+              <div className="h-full bg-pri rounded-full transition-all" style={{width:importProgress+'%'}}/>
+            </div>
+          </div>:<Btn onClick={doImport}>⬆️ 匯入 {rows.filter(r=>r._chk!==false&&!r._dup).length} 筆帳目</Btn>}
         </div>}
     </>}
   </Sheet>;
@@ -1268,6 +1350,7 @@ function App(){
     await gasCall('add',{data:expData,ledgerId});
     await load();};
   const handleDelete=async id=>{
+    if(id==='__refresh__'){await load();return;} // refresh signal from edit
     try{await gasCall('delete',{id,ledgerId});await load();showToast('已刪除');}
     catch(e){showToast('刪除失敗','err');}};
 
