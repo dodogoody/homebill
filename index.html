@@ -7,791 +7,793 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0d0d12">
 <title>算帳啦</title>
-<link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;算帳啦&quot;,&quot;short_name&quot;:&quot;算帳啦&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%230d0d12&quot;,&quot;theme_color&quot;:&quot;%230d0d12&quot;}">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        bg: '#0d0d12', c1: '#16161e', c2: '#1e1e28', c3: '#262634',
-        bd: '#2e2e40', pri: '#f5c842', grn: '#2ecc71', red: '#e74c3c', blue: '#3498db',
-        tx: '#f0f0f8', tx2: '#8888aa', tx3: '#44445a',
-      },
-      fontFamily: { sans: ['-apple-system','PingFang TC','Helvetica Neue','sans-serif'] },
-    }
-  }
-}
+tailwind.config={theme:{extend:{colors:{
+  bg:'#0d0d12',c1:'#16161e',c2:'#1e1e28',c3:'#262634',
+  bd:'#2e2e40',pri:'#f5c842',grn:'#2ecc71',red:'#e74c3c',blue:'#3498db',
+  tx:'#f0f0f8',tx2:'#8888aa',tx3:'#44445a'
+}}}}
 </script>
 <style>
-* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-html, body { background: #0d0d12; margin: 0; font-family: -apple-system,'PingFang TC',sans-serif; }
-body { overflow-x: hidden; }
-.safe-top { padding-top: env(safe-area-inset-top, 0px); }
-.safe-bot { padding-bottom: env(safe-area-inset-bottom, 0px); }
-.pb-nav { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
-input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
-input,select,textarea { -webkit-appearance: none; }
-.slide-up { animation: slideUp .32s cubic-bezier(.32,1,.23,1) forwards; }
-@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-.fade-in { animation: fadeIn .2s ease forwards; }
-@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-.press:active { transform: scale(.95); }
-::-webkit-scrollbar { display: none; }
+*{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
+html,body{background:#0d0d12;margin:0;font-family:-apple-system,'PingFang TC',sans-serif;overflow-x:hidden}
+.pb-nav{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+.pt-safe{padding-top:env(safe-area-inset-top,0px)}
+.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px)}
+input,select,textarea{-webkit-appearance:none;appearance:none}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+.slide-up{animation:su .3s cubic-bezier(.32,1,.23,1)}
+@keyframes su{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.fade{animation:fd .18s ease}
+@keyframes fd{from{opacity:0}to{opacity:1}}
+::-webkit-scrollbar{display:none}
+.scroll-x{display:flex;overflow-x:auto;gap:8px;padding-bottom:4px;scrollbar-width:none}
+.scroll-x::-webkit-scrollbar{display:none}
+select option{background:#1e1e28}
 </style>
 </head>
 <body class="bg-bg text-tx">
 <div id="root"></div>
-
 <script type="text/babel">
-const { useState, useEffect, useCallback, useRef, useMemo } = React;
+const {useState,useEffect,useCallback,useRef,useMemo}=React;
 
-// ══════════════════════════════════════════
-// CONFIG — change GAS_URL to your deployed URL
-// ══════════════════════════════════════════
-// ══ 填入你的 GAS 部署 URL ══
-// 例：const GAS_URL = 'https://script.google.com/macros/s/AKfycbx.../exec';
-// 留空 = 使用 mock 示範資料（不連後端）
-const GAS_URL = '';
+// ══ CONFIG ══
+const GAS_URL='https://script.google.com/macros/s/AKfycbxMcktk_mIHMe8yrTCat0-1oWfNuVjvzTfru2CMh8aY9rSkLxU2yeU9IJxTSuk7JBxb1w/exec';
 
-// ══════════════════════════════════════════
-// API LAYER
-// ══════════════════════════════════════════
-const api = {
-  async call(action, payload = {}) {
-    if (!GAS_URL) return mockApi(action, payload);
-    try {
-      // GAS CORS fix: use no Content-Type header (avoids preflight)
-      // Send as plain text, GAS still parses JSON body
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action, ...payload }),
-        redirect: 'follow',
-      });
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (data.error) throw new Error(data.error);
-      return data;
-    } catch (e) {
-      console.error('API Error:', e);
-      throw e;
-    }
-  },
-  getAll: (ledgerId) => api.call('getAll', { ledgerId }),
-  add: (data, ledgerId) => api.call('add', { data, ledgerId }),
-  del: (id, ledgerId) => api.call('delete', { id, ledgerId }),
-  saveMembers: (members, ledgerId) => api.call('saveMembers', { members, ledgerId }),
-};
-
-// Mock data for demo
-let _mock = {
-  expenses: [
-    { id:'1', date:'2026-03-22', description:'晚餐', amount:800, payer:'Ember', participants:['Ember','Oliver'], category:'餐飲' },
-    { id:'2', date:'2026-03-22', description:'計程車', amount:320, payer:'Oliver', participants:['Ember','Oliver'], category:'交通' },
-    { id:'3', date:'2026-03-21', description:'咖啡', amount:180, payer:'Ember', participants:['Ember','Oliver'], category:'餐飲' },
-  ],
-  members: [{ name:'Ember', avatar:'🐸' }, { name:'Oliver', avatar:'🐷' }],
-};
-function mockApi(action, payload) {
-  const { data, id, members, ledgerId } = payload;
-  if (action === 'getAll') {
-    const bal = {};
-    _mock.members.forEach(m => bal[m.name] = 0);
-    _mock.expenses.forEach(e => {
-      const t = parseFloat(e.amount), ps = e.participants;
-      if (bal[e.payer] !== undefined) bal[e.payer] += t;
-      const share = t / ps.length;
-      ps.forEach(p => { if (bal[p] !== undefined) bal[p] -= share; });
-    });
-    const tx = [], cr = [], db = [];
-    Object.entries(bal).forEach(([p,a]) => {
-      if (a > 0.01) cr.push({p,a}); if (a < -0.01) db.push({p,a:-a});
-    });
-    cr.sort((a,b)=>b.a-a.a); db.sort((a,b)=>b.a-a.a);
-    let i=0,j=0;
-    while(i<cr.length&&j<db.length){
-      const pay=Math.min(cr[i].a,db[j].a);
-      tx.push({from:db[j].p,to:cr[i].p,amount:Math.round(pay)});
-      cr[i].a-=pay; db[j].a-=pay;
-      if(cr[i].a<0.01)i++; if(db[j].a<0.01)j++;
-    }
-    return { expenses: _mock.expenses, members: _mock.members, settlement: { balance: bal, transactions: tx } };
-  }
-  if (action === 'add') {
-    const exp = { id: Date.now().toString(), ...data };
-    _mock.expenses.unshift(exp);
-    return { success: true };
-  }
-  if (action === 'delete') {
-    _mock.expenses = _mock.expenses.filter(e => e.id !== id);
-    return { success: true };
-  }
-  if (action === 'saveMembers') {
-    _mock.members = members;
-    return { success: true };
-  }
-  return {};
+// ══ API ══
+async function gasCall(action,payload={}){
+  const body=JSON.stringify({action,...payload});
+  const res=await fetch(GAS_URL,{method:'POST',body,redirect:'follow'});
+  const text=await res.text();
+  try{const d=JSON.parse(text);if(d.error)throw new Error(d.error);return d;}
+  catch(e){if(e.message&&e.message!==text)throw e;throw new Error('回應格式錯誤');}
 }
 
-// ══════════════════════════════════════════
-// CONSTANTS
-// ══════════════════════════════════════════
-const CATS = ['餐飲','交通','住宿','娛樂','購物','其他'];
-const CICO = { '餐飲':'🍜','交通':'🚗','住宿':'🏠','娛樂':'🎉','購物':'🛍️','其他':'📌' };
-const EMOS = ['🐶','🐱','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐙','🦋','🐬'];
-const fmt = n => 'NT$' + Math.abs(Math.round(Number(n))).toLocaleString();
-const dav = n => !n ? '👤' : EMOS[[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%EMOS.length];
-const mav = m => (typeof m==='object' ? m.avatar||dav(m.name) : dav(m));
-const mname = m => typeof m==='object' ? m.name : m;
-const today = () => new Date().toISOString().slice(0,10);
+// ══ CONSTANTS ══
+const CATS=['餐飲','交通','住宿','娛樂','購物','其他'];
+const CICO={'餐飲':'🍜','交通':'🚗','住宿':'🏠','娛樂':'🎉','購物':'🛍️','其他':'📌'};
+const EMOS=['🐶','🐱','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐙','🦋','🐬'];
+const fmt=n=>'NT$'+Math.abs(Math.round(Number(n))).toLocaleString();
+const today=()=>new Date().toISOString().slice(0,10);
+const dav=n=>!n?'👤':EMOS[[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%EMOS.length];
+const mav=m=>typeof m==='object'?m.avatar||dav(m.name):dav(m);
+const mname=m=>typeof m==='object'?m.name:m;
 
-// ══════════════════════════════════════════
-// COMPONENTS
-// ══════════════════════════════════════════
+function calcSettle(expenses,members){
+  const bal={};members.forEach(m=>bal[mname(m)]=0);
+  expenses.forEach(e=>{
+    const t=parseFloat(e.amount),ps=e.participants;
+    if(bal[e.payer]!==undefined)bal[e.payer]+=t;
+    if(Array.isArray(ps)){const s=t/ps.length;ps.forEach(p=>{if(bal[p]!==undefined)bal[p]-=s;});}
+    else if(ps&&typeof ps==='object'){Object.entries(ps).forEach(([k,v])=>{if(bal[k]!==undefined)bal[k]-=parseFloat(v);});}
+  });
+  const tx=[],cr=[],db=[];
+  Object.entries(bal).forEach(([p,a])=>{if(a>0.01)cr.push({p,a});if(a<-0.01)db.push({p,a:-a});});
+  cr.sort((a,b)=>b.a-a.a);db.sort((a,b)=>b.a-a.a);
+  let i=0,j=0;
+  while(i<cr.length&&j<db.length){
+    const pay=Math.min(cr[i].a,db[j].a);
+    tx.push({from:db[j].p,to:cr[i].p,amount:Math.round(pay)});
+    cr[i].a-=pay;db[j].a-=pay;
+    if(cr[i].a<0.01)i++;if(db[j].a<0.01)j++;
+  }
+  return{balance:bal,transactions:tx};
+}
 
-// Toast
-function Toast({ msg, type, onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 2000); return () => clearTimeout(t); }, []);
-  return (
-    <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 fade-in
-      px-5 py-3 rounded-3xl text-sm font-semibold whitespace-nowrap border
-      ${type==='ok'?'border-grn text-grn bg-c2':type==='err'?'border-red text-red bg-c2':'border-bd text-tx bg-c2'}`}
-      style={{bottom:'calc(80px + env(safe-area-inset-bottom,0px))'}}>
-      {msg}
+// ══ SMALL COMPONENTS ══
+function Spin(){return<div className="w-7 h-7 border-2 border-bd border-t-pri rounded-full animate-spin mx-auto my-16"/>}
+function Toast({msg,type,onDone}){
+  useEffect(()=>{const t=setTimeout(onDone,2200);return()=>clearTimeout(t);},[]);
+  const col=type==='ok'?'border-grn text-grn':type==='err'?'border-red text-red':'border-bd text-tx';
+  return<div className={`fixed left-1/2 -translate-x-1/2 z-[999] px-5 py-3 rounded-3xl text-sm font-semibold whitespace-nowrap border bg-c2 fade ${col}`}
+    style={{bottom:'calc(72px + env(safe-area-inset-bottom,0px))'}}>
+    {msg}</div>;
+}
+function Sheet({children,onClose,title}){
+  return<div className="fixed inset-0 z-[200] flex items-end justify-center" style={{background:'rgba(0,0,0,.7)'}}>
+    <div className="bg-c1 rounded-t-3xl w-full max-w-lg max-h-[88vh] flex flex-col slide-up"
+      onClick={e=>e.stopPropagation()}>
+      <div className="w-11 h-1.5 bg-bd rounded-full mx-auto mt-3 mb-2 flex-shrink-0"/>
+      {title&&<div className="px-5 pb-3 font-black text-lg flex-shrink-0 border-b border-bd">{title}</div>}
+      <div className="overflow-y-auto flex-1 px-5 py-4">{children}</div>
     </div>
-  );
+  </div>;
 }
-
-// Icon button
-const IconBtn = ({ onClick, children, className='' }) => (
-  <button onClick={onClick}
-    className={`w-10 h-10 rounded-full bg-c2 border border-bd flex items-center justify-center
-    text-tx2 text-lg active:scale-90 transition-transform ${className}`}>
-    {children}
-  </button>
-);
-
-// ── HOME PAGE ──
-function HomePage({ data, onAdd }) {
-  const { expenses=[], members=[], settlement={} } = data;
-  const { balance={}, transactions=[] } = settlement;
-  const total = expenses.reduce((s,e)=>s+parseFloat(e.amount),0);
-  const mo = new Date().toISOString().slice(0,7);
-  const monthTotal = expenses.filter(e=>(e.date||'').startsWith(mo))
-    .reduce((s,e)=>s+parseFloat(e.amount),0);
-  const recent = expenses.slice(0,3);
-
-  return (
-    <div className="pb-nav">
-      {/* Safe area top */}
-      <div className="safe-top" />
-
-      {/* Header */}
-      <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-        <div>
-          <p className="text-tx2 text-sm font-semibold tracking-widest uppercase">群組支出</p>
-          <p className="text-4xl font-black text-tx mt-1 tracking-tight">{fmt(total)}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-tx3 text-xs">本月</p>
-          <p className="text-xl font-bold text-pri">{fmt(monthTotal)}</p>
-        </div>
-      </div>
-
-      {/* Stats pills */}
-      <div className="px-5 flex gap-3 mt-2 mb-4">
-        {[
-          { label:'本月筆數', val: expenses.filter(e=>(e.date||'').startsWith(mo)).length + '筆' },
-          { label:'成員', val: members.length + '人' },
-          { label:'待結算', val: transactions.length > 0 ? transactions.length+'筆' : '已結清' },
-        ].map(s => (
-          <div key={s.label} className="flex-1 bg-c1 rounded-2xl p-3 text-center border border-bd">
-            <p className="text-sm font-bold text-tx">{s.val}</p>
-            <p className="text-xs text-tx3 mt-1">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Balances */}
-      {members.length > 0 && (
-        <>
-          <div className="px-5 mb-2">
-            <p className="text-tx3 text-xs font-bold uppercase tracking-wider">淨收付</p>
-          </div>
-          <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-4">
-            {members.map((m,i) => {
-              const a = balance[mname(m)] || 0;
-              return (
-                <div key={i} className={`flex items-center gap-3 px-4 py-3 ${i<members.length-1?'border-b border-bd':''}`}>
-                  <div className="w-10 h-10 rounded-full bg-c2 flex items-center justify-center text-xl">{mav(m)}</div>
-                  <div className="flex-1">
-                    <p className="font-bold text-base">{mname(m)}</p>
-                    <p className="text-xs text-tx2">{a>0.5?'別人欠你':a<-0.5?'你欠別人':'已結清'}</p>
-                  </div>
-                  <p className={`font-black text-lg ${a>0.5?'text-grn':a<-0.5?'text-red':'text-tx3'}`}>
-                    {(a>=0?'+':'')}{fmt(a)}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Debt transactions */}
-      {transactions.length > 0 && (
-        <>
-          <div className="px-5 mb-2">
-            <p className="text-tx3 text-xs font-bold uppercase tracking-wider">需要轉帳</p>
-          </div>
-          <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-4">
-            {transactions.slice(0,3).map((t,i) => {
-              const mf = members.find(m=>mname(m)===t.from)||t.from;
-              const mt = members.find(m=>mname(m)===t.to)||t.to;
-              return (
-                <div key={i} className={`flex items-center px-4 py-3 ${i<transactions.length-1?'border-b border-bd':''}`}>
-                  <div className="flex flex-col items-center w-16">
-                    <span className="text-2xl">{mav(mf)}</span>
-                    <span className="text-xs text-tx2 font-semibold mt-1 truncate w-16 text-center">{t.from}</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-1 px-2">
-                    <span className="text-xs text-tx3">需要支付</span>
-                    <span className="text-lg font-black text-pri">{fmt(t.amount)}</span>
-                    <div className="w-full h-0.5 bg-bd relative">
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0 h-0 border-t-4 border-b-4 border-l-8 border-transparent border-l-pri" />
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-center w-16">
-                    <span className="text-2xl">{mav(mt)}</span>
-                    <span className="text-xs text-tx2 font-semibold mt-1 truncate w-16 text-center">{t.to}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Recent expenses */}
-      {recent.length > 0 && (
-        <>
-          <div className="px-5 mb-2">
-            <p className="text-tx3 text-xs font-bold uppercase tracking-wider">最近帳目</p>
-          </div>
-          <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-4">
-            {recent.map((e,i) => (
-              <div key={e.id} className={`flex items-center gap-3 px-4 py-3 ${i<recent.length-1?'border-b border-bd':''}`}>
-                <div className="w-10 h-10 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0">{CICO[e.category]||'📌'}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-base truncate">{e.description}</p>
-                  <p className="text-xs text-tx2 mt-0.5">{e.date?.slice(5)} · {e.payer} 付</p>
-                </div>
-                <p className="font-bold text-base">{fmt(e.amount)}</p>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {members.length === 0 && (
-        <div className="mx-4 bg-c1 rounded-2xl p-8 text-center border border-bd">
-          <p className="text-4xl mb-3">👥</p>
-          <p className="font-bold text-lg">還沒有成員</p>
-          <p className="text-tx2 text-sm mt-1">先到「成員」頁新增</p>
-        </div>
-      )}
+function Btn({children,onClick,variant='pri',className='',disabled=false}){
+  const base='w-full py-4 rounded-2xl font-black text-base transition-transform active:scale-95 disabled:opacity-40';
+  const v=variant==='pri'?'bg-pri text-bg':variant==='ghost'?'bg-c2 text-tx border border-bd':'bg-red text-white';
+  return<button onClick={onClick} disabled={disabled} className={`${base} ${v} ${className}`}>{children}</button>;
+}
+function Row({left,title,sub,right,onDel,onClick,border=true}){
+  return<div className={`flex items-center gap-3 px-4 py-3.5 ${border?'border-b border-bd last:border-0':''}`}
+    onClick={onClick} style={onClick?{cursor:'pointer'}:{}}>
+    {left&&<div className="w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0">{left}</div>}
+    <div className="flex-1 min-w-0">
+      <p className="font-semibold text-base leading-tight truncate">{title}</p>
+      {sub&&<p className="text-xs text-tx2 mt-0.5 leading-snug">{sub}</p>}
     </div>
-  );
+    {right&&<div className="text-right flex-shrink-0">{right}</div>}
+    {onDel&&<button onClick={e=>{e.stopPropagation();onDel();}} className="text-tx3 text-xl px-1 ml-1">🗑</button>}
+  </div>;
+}
+function Card({children,className=''}){
+  return<div className={`bg-c1 rounded-2xl border border-bd overflow-hidden mx-4 mb-3 ${className}`}>{children}</div>;
+}
+function SectionHeader({title,action,onAction}){
+  return<div className="flex items-center justify-between px-5 py-2 mt-1">
+    <p className="text-xs font-bold text-tx3 uppercase tracking-widest">{title}</p>
+    {action&&<button onClick={onAction} className="text-sm font-bold text-pri">{action}</button>}
+  </div>;
 }
 
-// ── ADD EXPENSE PAGE (full screen) ──
-function AddPage({ members, onSave, onClose, toast }) {
-  const [amt, setAmt] = useState('');
-  const [desc, setDesc] = useState('');
-  const [date, setDate] = useState(today());
-  const [payer, setPayer] = useState(members[0] ? mname(members[0]) : '');
-  const [cat, setCat] = useState('餐飲');
-  const [split, setSplit] = useState('equal'); // 'equal' | 'custom'
-  const [selected, setSelected] = useState(members.map(mname));
-  const [customAmt, setCustomAmt] = useState({});
-  const [loading, setLoading] = useState(false);
-  const amtRef = useRef();
+// ══ HOME PAGE ══
+function HomePage({data,onGoPage}){
+  const{expenses=[],members=[],settlement={},settles=[]}=data;
+  const{balance={},transactions=[]}=settlement;
+  const total=expenses.reduce((s,e)=>s+parseFloat(e.amount),0);
+  const mo=new Date().toISOString().slice(0,7);
+  const wa=new Date(Date.now()-7*864e5).toISOString().slice(0,10);
+  const mT=expenses.filter(e=>(e.date||'').startsWith(mo)).reduce((s,e)=>s+parseFloat(e.amount),0);
+  const wT=expenses.filter(e=>(e.date||'')>=wa).reduce((s,e)=>s+parseFloat(e.amount),0);
 
-  useEffect(() => { setTimeout(() => amtRef.current?.focus(), 350); }, []);
+  // category stats
+  const catTotals={};
+  CATS.forEach(c=>catTotals[c]=0);
+  expenses.forEach(e=>{const c=e.category||'其他';if(catTotals[c]!==undefined)catTotals[c]+=parseFloat(e.amount)||0;});
+  const catRows=CATS.filter(c=>catTotals[c]>0).sort((a,b)=>catTotals[b]-catTotals[a]);
 
-  const toggleMember = (n) => {
-    setSelected(s => s.includes(n) ? s.filter(x=>x!==n) : [...s, n]);
-  };
+  return<div className="pb-nav">
+    <div className="pt-safe"/>
+    {/* Hero */}
+    <div className="px-5 pt-4 pb-2">
+      <p className="text-xs font-bold text-tx2 uppercase tracking-widest mb-1">群組累計支出</p>
+      <p className="text-5xl font-black tracking-tight">{fmt(total)}</p>
+      <div className="flex gap-3 mt-3">
+        {[{l:'本月',v:fmt(mT)},{l:'近7天',v:fmt(wT)},{l:'筆數',v:expenses.length+'筆'}].map(s=>
+          <div key={s.l} className="flex-1 bg-c1 rounded-2xl p-3 border border-bd text-center">
+            <p className="font-black text-sm">{s.v}</p>
+            <p className="text-xs text-tx3 mt-0.5">{s.l}</p>
+          </div>)}
+      </div>
+    </div>
 
-  const customSum = Object.values(customAmt).reduce((a,b)=>a+(parseFloat(b)||0), 0);
-  const totalAmt = parseFloat(amt) || 0;
+    {/* Balance */}
+    {members.length>0&&<>
+      <SectionHeader title="淨收付" action="結算›" onAction={()=>onGoPage('settle')}/>
+      <Card>{members.map((m,i)=>{
+        const a=balance[mname(m)]||0;
+        return<Row key={i} left={mav(m)} title={mname(m)}
+          sub={a>0.5?'別人欠你':a<-0.5?'你欠別人':'已結清'}
+          right={<span className={`font-black text-base ${a>0.5?'text-grn':a<-0.5?'text-red':'text-tx3'}`}>
+            {(a>=0?'+':'')}{fmt(a)}</span>}/>;
+      })}</Card>
+    </>}
 
-  const handleSubmit = async () => {
-    if (!desc.trim()) { toast('請輸入描述','err'); return; }
-    if (!totalAmt || totalAmt <= 0) { toast('請輸入金額','err'); return; }
-    let participants;
-    if (split === 'equal') {
-      if (!selected.length) { toast('請選擇分攤對象','err'); return; }
-      participants = selected;
-    } else {
-      const obj = {};
-      Object.entries(customAmt).forEach(([k,v]) => { if (parseFloat(v)>0) obj[k]=parseFloat(v); });
-      if (!Object.keys(obj).length) { toast('請填入各人金額','err'); return; }
-      if (Math.abs(customSum - totalAmt) > 0.5) { toast('合計需等於總金額','err'); return; }
-      participants = obj;
+    {/* Debts */}
+    {transactions.length>0&&<>
+      <SectionHeader title="需要轉帳" action="查看全部›" onAction={()=>onGoPage('settle')}/>
+      <Card>{transactions.slice(0,2).map((t,i)=>{
+        const mf=members.find(m=>mname(m)===t.from)||t.from;
+        const mt=members.find(m=>mname(m)===t.to)||t.to;
+        return<div key={i} className="flex items-center px-4 py-3 border-b border-bd last:border-0">
+          <div className="flex flex-col items-center w-16 flex-shrink-0">
+            <span className="text-2xl">{mav(mf)}</span>
+            <span className="text-xs text-tx2 mt-1 w-16 text-center truncate font-semibold">{t.from}</span>
+          </div>
+          <div className="flex-1 flex flex-col items-center gap-1 px-3">
+            <span className="text-xs text-tx3">需要支付</span>
+            <span className="text-lg font-black text-pri">{fmt(t.amount)}</span>
+            <div className="w-full flex items-center gap-1">
+              <div className="flex-1 h-0.5 bg-bd"/>
+              <div className="w-0 h-0 border-t-[5px] border-b-[5px] border-l-[8px] border-transparent border-l-pri"/>
+            </div>
+          </div>
+          <div className="flex flex-col items-center w-16 flex-shrink-0">
+            <span className="text-2xl">{mav(mt)}</span>
+            <span className="text-xs text-tx2 mt-1 w-16 text-center truncate font-semibold">{t.to}</span>
+          </div>
+        </div>;
+      })}</Card>
+    </>}
+
+    {/* Category stats */}
+    {catRows.length>0&&<>
+      <SectionHeader title="分類統計"/>
+      <Card>{catRows.map((c,i)=>{
+        const pct=total>0?Math.round(catTotals[c]/total*100):0;
+        return<div key={c} className="flex items-center gap-3 px-4 py-3 border-b border-bd last:border-0">
+          <span className="text-2xl w-9 text-center">{CICO[c]}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between mb-1">
+              <span className="text-sm font-bold">{c}</span>
+              <span className="text-sm font-bold">{pct}%</span>
+            </div>
+            <div className="h-1.5 bg-bd rounded-full overflow-hidden">
+              <div className="h-full bg-pri rounded-full transition-all" style={{width:pct+'%'}}/>
+            </div>
+          </div>
+          <span className="text-sm font-black text-right w-20 flex-shrink-0">{fmt(catTotals[c])}</span>
+        </div>;
+      })}</Card>
+    </>}
+
+    {members.length===0&&<Card className="m-4">
+      <div className="py-10 text-center">
+        <p className="text-5xl mb-3">👥</p>
+        <p className="font-black text-lg">還沒有成員</p>
+        <p className="text-tx2 text-sm mt-1">先到「成員」頁新增</p>
+      </div>
+    </Card>}
+    <div className="py-3 text-center text-xs text-tx3">↕ 下拉可重新整理</div>
+  </div>;
+}
+
+// ══ ADD EXPENSE ══
+function AddPage({members,onSave,onClose,toast}){
+  const[amt,setAmt]=useState('');
+  const[desc,setDesc]=useState('');
+  const[date,setDate]=useState(today());
+  const[payer,setPayer]=useState(members[0]?mname(members[0]):'');
+  const[cat,setCat]=useState('餐飲');
+  const[split,setSplit]=useState('equal');
+  const[sel,setSel]=useState(members.map(mname));
+  const[custom,setCustom]=useState({});
+  const[loading,setLoading]=useState(false);
+  const amtRef=useRef();
+  useEffect(()=>{setTimeout(()=>amtRef.current?.focus(),350);},[]);
+  const toggle=n=>setSel(s=>s.includes(n)?s.filter(x=>x!==n):[...s,n]);
+  const csum=Object.values(custom).reduce((a,b)=>a+(parseFloat(b)||0),0);
+  const total=parseFloat(amt)||0;
+  const submit=async()=>{
+    if(!desc.trim()){toast('請輸入描述','err');return;}
+    if(!total||total<=0){toast('請輸入金額','err');return;}
+    let parts;
+    if(split==='equal'){
+      if(!sel.length){toast('請選擇分攤對象','err');return;}
+      parts=sel;
+    }else{
+      const obj={};Object.entries(custom).forEach(([k,v])=>{if(parseFloat(v)>0)obj[k]=parseFloat(v);});
+      if(!Object.keys(obj).length){toast('請填入各人金額','err');return;}
+      if(Math.abs(csum-total)>0.5){toast('合計需等於總金額','err');return;}
+      parts=obj;
     }
     setLoading(true);
-    try {
-      await onSave({ description: desc.trim(), amount: totalAmt, payer, date, category: cat, participants });
-      toast('✅ 已記帳','ok');
-      onClose();
-    } catch(e) { toast('記帳失敗','err'); }
-    finally { setLoading(false); }
+    try{await onSave({description:desc.trim(),amount:total,payer,date,category:cat,participants:parts});
+      toast('✅ 已記帳','ok');onClose();}
+    catch(e){toast('記帳失敗: '+e.message,'err');}
+    finally{setLoading(false);}
   };
-
-  return (
-    <div className="fixed inset-0 bg-bg z-50 flex flex-col slide-up">
-      {/* Top bar */}
-      <div className="safe-top" />
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-bd flex-shrink-0">
-        <button onClick={onClose} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2 text-lg press">✕</button>
-        <h2 className="text-lg font-black flex-1">記帳</h2>
+  return<div className="fixed inset-0 bg-bg z-[100] flex flex-col slide-up">
+    <div className="pt-safe flex-shrink-0"/>
+    <div className="flex items-center gap-3 px-4 py-3 border-b border-bd flex-shrink-0">
+      <button onClick={onClose} className="w-9 h-9 rounded-full bg-c2 flex items-center justify-center text-tx2">✕</button>
+      <h2 className="text-lg font-black flex-1">記帳</h2>
+    </div>
+    <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
+      {/* Amount */}
+      <div className="mb-5">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">金額</label>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-tx3 text-sm font-semibold pointer-events-none" style={{opacity:amt?0:1}}>NT$</span>
+          <input ref={amtRef} type="number" value={amt} onChange={e=>setAmt(e.target.value)}
+            className="w-full bg-c2 border-2 border-bd rounded-2xl pl-12 pr-4 text-4xl font-black text-tx focus:border-pri outline-none"
+            placeholder="0" inputMode="decimal" style={{minHeight:'76px'}}/>
+        </div>
       </div>
+      {/* Desc */}
+      <div className="mb-5">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">描述</label>
+        <input type="text" value={desc} onChange={e=>setDesc(e.target.value)}
+          className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"
+          placeholder="例：晚餐、計程車…"/>
+      </div>
+      {/* Date + Payer */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div><label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">日期</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"/></div>
+        <div><label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">付款人</label>
+          <select value={payer} onChange={e=>setPayer(e.target.value)}
+            className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none appearance-none">
+            {members.map(m=><option key={mname(m)}>{mname(m)}</option>)}</select></div>
+      </div>
+      {/* Category */}
+      <div className="mb-5">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分類</label>
+        <div className="scroll-x">
+          {CATS.map(c=><button key={c} onClick={()=>setCat(c)}
+            className={`flex-shrink-0 px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 transition-all ${cat===c?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+            {CICO[c]} {c}</button>)}
+        </div>
+      </div>
+      {/* Split */}
+      <div className="mb-5">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分攤方式</label>
+        <div className="flex bg-c2 rounded-2xl p-1 gap-1 mb-3">
+          {[['equal','⚖️ 平均'],['custom','✏️ 自訂']].map(([v,l])=>
+            <button key={v} onClick={()=>setSplit(v)}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${split===v?'bg-pri text-bg':'text-tx2'}`}>{l}</button>)}
+        </div>
+        {split==='equal'?
+          <div className="flex flex-wrap gap-2">{members.map(m=>{const n=mname(m);const on=sel.includes(n);
+            return<button key={n} onClick={()=>toggle(n)}
+              className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl border-2 min-w-[70px] ${on?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+              <span className="text-2xl">{mav(m)}</span><span className="text-sm font-semibold">{n}</span></button>;})}
+          </div>:
+          <div className="bg-c2 rounded-2xl overflow-hidden border border-bd">
+            {members.map((m,i)=>{const n=mname(m);return(
+              <div key={n} className="flex items-center gap-3 px-4 py-3 border-b border-bd last:border-0">
+                <span className="text-2xl">{mav(m)}</span>
+                <span className="flex-1 font-semibold">{n}</span>
+                <div className="relative w-28">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-tx3 text-xs pointer-events-none">NT$</span>
+                  <input type="number" value={custom[n]||''} onChange={e=>setCustom(p=>({...p,[n]:e.target.value}))}
+                    className="w-full bg-c3 border border-bd rounded-xl pl-9 pr-2 py-2 text-sm font-bold text-right text-tx outline-none focus:border-pri"
+                    placeholder="0" inputMode="decimal"/></div></div>);})}
+            {total>0&&<div className={`px-4 py-2 text-center text-xs font-semibold ${Math.abs(csum-total)<0.5?'text-grn bg-grn/10':'text-red bg-red/10'}`}>
+              {Math.abs(csum-total)<0.5?`✅ ${fmt(csum)} 相符`:csum<total?`⚠ 還差 ${fmt(total-csum)}`:`⚠ 超出 ${fmt(csum-total)}`}</div>}
+          </div>}
+      </div>
+    </div>
+    <div className="flex-shrink-0 px-4 pt-3 border-t border-bd pb-safe bg-bg" style={{paddingBottom:'max(16px,env(safe-area-inset-bottom,16px))'}}>
+      <Btn onClick={submit} disabled={loading}>{loading?'記帳中…':'✓ 記帳'}</Btn>
+    </div>
+  </div>;
+}
 
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
-        {/* Amount */}
-        <div className="mb-5">
-          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">金額</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-tx3 text-sm font-semibold pointer-events-none" style={{opacity:amt?0:1}}>NT$</span>
-            <input ref={amtRef} type="number" value={amt} onChange={e=>setAmt(e.target.value)}
-              className="w-full bg-c2 border-2 border-bd rounded-2xl pl-12 pr-4 py-4 text-4xl font-black text-tx focus:border-pri outline-none transition-colors"
-              placeholder="0" inputMode="decimal" style={{minHeight:'80px'}} />
+// ══ RECORDS PAGE ══
+function RecordsPage({data,onDelete,onImport}){
+  const{expenses=[],members=[]}=data;
+  const slb=p=>{
+    if(Array.isArray(p))return p.length===members.length?'所有人平分':p.join('、')+' 平分';
+    if(p&&typeof p==='object')return Object.entries(p).map(([k,v])=>`${k} ${fmt(v)}`).join(' / ');
+    return'';
+  };
+  const groups={};
+  expenses.forEach(e=>{const m=(e.date||'').slice(0,7);if(!groups[m])groups[m]=[];groups[m].push(e);});
+
+  return<div className="pb-nav">
+    <div className="pt-safe"/>
+    <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+      <div><h1 className="text-2xl font-black">帳目</h1>
+        <p className="text-tx2 text-sm mt-0.5">共 {expenses.length} 筆</p></div>
+      <button onClick={onImport} className="px-4 py-2 bg-c2 rounded-2xl text-sm font-bold text-tx2 border border-bd">📥 匯入</button>
+    </div>
+    {!expenses.length&&<div className="py-20 text-center"><p className="text-5xl mb-3">📭</p>
+      <p className="font-bold text-lg text-tx2">還沒有帳目</p></div>}
+    {Object.keys(groups).sort().reverse().map(mo=><div key={mo}>
+      <p className="px-5 py-1.5 text-xs font-bold text-tx3 uppercase tracking-wider">{mo}</p>
+      <Card>{groups[mo].map((e,i)=>
+        <Row key={e.id} left={CICO[e.category]||'📌'} title={e.description}
+          sub={`${e.date?.slice(5)} · ${e.payer} 付 · ${slb(e.participants)}`}
+          right={<span className="font-black text-base">{fmt(e.amount)}</span>}
+          onDel={()=>{ if(confirm('確定刪除？'))onDelete(e.id); }}/>)}
+      </Card>
+    </div>)}
+  </div>;
+}
+
+// ══ IMPORT SHEET ══
+function ImportSheet({members,ledgerId,onDone,toast}){
+  const[tab,setTab]=useState('file');
+  const[rows,setRows]=useState([]);
+  const[cols,setCols]=useState([]);
+  const[colMap,setColMap]=useState({date:-1,desc:-1,amount:-1});
+  const[payer,setPayer]=useState(members[0]?mname(members[0]):'');
+  const[aiKey,setAiKey]=useState(()=>localStorage.getItem('ai_key')||'');
+  const[aiProv,setAiProv]=useState(()=>localStorage.getItem('ai_prov')||'openai');
+  const[aiLoading,setAiLoading]=useState(false);
+
+  const normDate=s=>{s=s.trim();
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+    let m=s.match(/^(\d{4})[\/\.](\d{1,2})[\/\.](\d{1,2})$/);if(m)return`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    m=s.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);if(m)return`${parseInt(m[1])+1911}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    return s;};
+  const guesscat=d=>{const l=d.toLowerCase();
+    if(/餐|食|飯|麵|咖啡|coffee|food|全家|7-11|便利/.test(l))return'餐飲';
+    if(/捷運|台鐵|高鐵|uber|taxi|計程|加油|停車|mrt/.test(l))return'交通';
+    if(/hotel|旅館|住宿|airbnb/.test(l))return'住宿';
+    if(/電影|ktv|netflix|spotify/.test(l))return'娛樂';
+    if(/超市|百貨|購物|shopee|momo/.test(l))return'購物';
+    return'其他';};
+  const autoDetect=cs=>{
+    const map={date:-1,desc:-1,amount:-1};
+    const dk=['日期','date','消費日'],sk=['說明','描述','摘要','商店','消費','明細','description'],ak=['金額','消費金額','amount','台幣'];
+    cs.forEach((c,i)=>{const cl=c.toLowerCase();
+      if(map.date<0&&dk.some(k=>cl.includes(k)))map.date=i;
+      if(map.desc<0&&sk.some(k=>cl.includes(k)))map.desc=i;
+      if(map.amount<0&&ak.some(k=>cl.includes(k)))map.amount=i;});
+    if(map.date<0)map.date=0;if(map.desc<0)map.desc=cols.length>2?2:1;if(map.amount<0)map.amount=cs.length-1;
+    return map;};
+  const parseCSV=text=>{
+    const lines=text.split(/\r?\n/).filter(l=>l.trim());if(lines.length<2)return{cols:[],rows:[]};
+    let hIdx=0;for(let i=0;i<Math.min(8,lines.length);i++){if((lines[i].match(/,/g)||[]).length>=2){hIdx=i;break;}}
+    const parseLine=line=>{const res=[],cur=[''];let inQ=false;
+      for(const ch of line){if(ch==='"')inQ=!inQ;else if(ch===','&&!inQ){res.push(cur[0].trim());cur[0]='';}else cur[0]+=ch;}
+      res.push(cur[0].trim());return res;};
+    const cs=parseLine(lines[hIdx]);
+    const rs=lines.slice(hIdx+1).map(l=>parseLine(l)).filter(r=>r.some(c=>c.trim()));
+    return{cols:cs,rows:rs};};
+  const loadFile=file=>{
+    const ext=file.name.split('.').pop().toLowerCase();
+    if(ext==='csv'){
+      const fr=new FileReader();
+      fr.onload=e=>{let p=parseCSV(e.target.result);
+        if(p.cols.length<2){const fr2=new FileReader();fr2.onload=e2=>{setData(parseCSV(e2.target.result));};fr2.readAsText(file,'big5');}
+        else setData(p);};
+      fr.readAsText(file,'utf-8');
+    }else{
+      const XLSX_URL='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      const load=()=>{const fr=new FileReader();fr.onload=e=>{
+        const wb=window.XLSX.read(e.target.result,{type:'binary'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const arr=window.XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        let hIdx=0;for(let i=0;i<Math.min(8,arr.length);i++){if(arr[i].filter(c=>String(c).trim()).length>=3){hIdx=i;break;}}
+        const cs=arr[hIdx].map(c=>String(c));
+        const rs=arr.slice(hIdx+1).filter(r=>r.some(c=>String(c).trim()));
+        setData({cols:cs,rows:rs});};fr.readAsBinaryString(file);};
+      if(window.XLSX)load();else{const s=document.createElement('script');s.src=XLSX_URL;s.onload=load;document.head.appendChild(s);}
+    }};
+  const setData=({cols:cs,rows:rs})=>{if(!cs.length){toast('找不到有效資料','err');return;}
+    setCols(cs);const m=autoDetect(cs);setColMap(m);
+    const filtered=m.amount>=0?rs.filter(r=>{const v=String(r[m.amount]||'').replace(/,/g,'').replace(/[^0-9.\-]/g,'');return Math.abs(parseFloat(v)||0)>0&&String(r[m.amount]).trim()!=='-';})
+      .map(r=>{const v=String(r[m.amount]||'').replace(/,/g,'').replace(/[^0-9.\-]/g,'');r[m.amount]=Math.abs(parseFloat(v)||0);r._chk=true;r._cat=guesscat(String(r[m.desc>=0?m.desc:1]||''));return r;})
+      :rs.map(r=>{r._chk=true;r._cat='其他';return r;});
+    setRows(filtered);};
+  const doAiOcr=async file=>{
+    if(!aiKey){toast('請填入 API Key','err');return;}
+    setAiLoading(true);
+    const reader=new FileReader();
+    reader.onload=async e=>{
+      const b64=e.target.result.split(',')[1];
+      const mtype=file.type;
+      try{
+        let result;
+        const prompt='這是一張信用卡帳單圖片。請擷取所有消費明細，以JSON陣列回傳，格式：[{"date":"YYYY-MM-DD","description":"消費說明","amount":金額數字}]。只回傳JSON，金額取絕對值，排除0元。';
+        if(aiProv==='openai'){
+          const res=await fetch('https://api.openai.com/v1/chat/completions',{
+            method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+aiKey},
+            body:JSON.stringify({model:'gpt-4o',max_tokens:2000,messages:[{role:'user',content:[
+              {type:'image_url',image_url:{url:`data:${mtype};base64,${b64}`}},{type:'text',text:prompt}]}]})});
+          const d=await res.json();if(d.error)throw new Error(d.error.message);
+          result=d.choices?.[0]?.message?.content||'';
+        }else{
+          const r=await gasCall('ocrImage',{apiKey:aiKey,base64:b64,mimeType:mtype,provider:'claude'});
+          if(r.error)throw new Error(r.error);
+          const items=r.items||[];
+          setCols(['date','description','amount']);
+          setColMap({date:0,desc:1,amount:2});
+          setRows(items.filter(x=>x.amount>0).map(x=>{const row=[normDate(String(x.date)),x.description,x.amount];row._chk=true;row._cat=guesscat(x.description);return row;}));
+          setAiLoading(false);return;
+        }
+        const m=result.match(/\[[\s\S]*\]/);if(!m)throw new Error('AI無法識別');
+        const items=JSON.parse(m[0]);
+        setCols(['date','description','amount']);setColMap({date:0,desc:1,amount:2});
+        setRows(items.filter(x=>x.amount>0).map(x=>{const row=[normDate(String(x.date)),x.description,x.amount];row._chk=true;row._cat=guesscat(x.description);return row;}));
+      }catch(e){toast('AI 失敗: '+e.message,'err');}
+      finally{setAiLoading(false);}
+    };reader.readAsDataURL(file);};
+  const doImport=async()=>{
+    const allParts=members.map(mname);
+    const toImport=rows.filter(r=>r._chk!==false);
+    if(!toImport.length){toast('請選擇要匯入的資料','err');return;}
+    let ok=0;
+    for(const r of toImport){
+      const dt=normDate(String(r[colMap.date]||'').trim());
+      const desc=String(r[colMap.desc]||'').trim();
+      const amt=Math.abs(parseFloat(String(r[colMap.amount]||'').replace(/,/g,'').replace(/[^0-9.]/g,''))||0);
+      if(!amt||!desc)continue;
+      try{await gasCall('add',{data:{description:desc,amount:amt,payer,date:dt,category:r._cat||'其他',participants:allParts},ledgerId});ok++;}
+      catch(e){}
+    }
+    toast(`✅ 已匯入 ${ok} 筆`,'ok');onDone();};
+
+  return<Sheet title="匯入帳單">
+    {/* AI Key */}
+    <div className="mb-4">
+      <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-2">AI 截圖識別</p>
+      <div className="flex gap-2 mb-2">
+        {[['openai','💬 ChatGPT'],['claude','🤖 Claude']].map(([v,l])=>
+          <button key={v} onClick={()=>{setAiProv(v);localStorage.setItem('ai_prov',v);}}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 ${aiProv===v?'border-pri text-pri bg-pri/10':'border-bd text-tx2 bg-c2'}`}>{l}</button>)}
+      </div>
+      <div className="flex gap-2">
+        <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)}
+          className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2.5 text-sm text-tx outline-none focus:border-pri"
+          placeholder={aiProv==='openai'?'sk-...':'sk-ant-...'}/>
+        <button onClick={()=>{localStorage.setItem('ai_key',aiKey);toast('已儲存','ok');}}
+          className="px-4 py-2.5 bg-c2 border border-bd rounded-xl text-sm font-bold text-tx2">儲存</button>
+      </div>
+      {aiProv==='claude'&&<p className="text-xs text-tx3 mt-1.5">⚠ Claude 需先在 Apps Script 執行 requestExternalPermission</p>}
+    </div>
+
+    {/* Tabs */}
+    <div className="flex bg-c2 rounded-2xl p-1 gap-1 mb-4">
+      {[['file','📄 CSV/Excel'],['ai','🤖 AI截圖']].map(([v,l])=>
+        <button key={v} onClick={()=>setTab(v)}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${tab===v?'bg-pri text-bg':'text-tx2'}`}>{l}</button>)}
+    </div>
+
+    {tab==='file'&&<>
+      {!rows.length?<label className="block border-2 border-dashed border-bd rounded-2xl p-8 text-center cursor-pointer hover:border-pri transition-colors">
+        <p className="text-4xl mb-2">📂</p>
+        <p className="text-sm text-tx2">點擊上傳 CSV / Excel</p>
+        <p className="text-xs text-tx3 mt-1">.csv .xlsx .xls</p>
+        <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e=>e.target.files[0]&&loadFile(e.target.files[0])}/>
+      </label>:
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm text-tx2">共 {rows.length} 筆，已選 {rows.filter(r=>r._chk!==false).length} 筆</p>
+          <div className="flex gap-2">
+            <button onClick={()=>setRows(r=>r.map(x=>({...x,_chk:true})))} className="text-xs text-pri font-bold">全選</button>
+            <button onClick={()=>{setRows([]);setCols([]);}} className="text-xs text-tx3">重新上傳</button>
           </div>
         </div>
-
-        {/* Description */}
-        <div className="mb-5">
-          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">描述</label>
-          <input type="text" value={desc} onChange={e=>setDesc(e.target.value)}
-            className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"
-            placeholder="例：晚餐、計程車…" />
-        </div>
-
-        {/* Date + Payer */}
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <div>
-            <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">日期</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-              className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none" />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">付款人</label>
-            <select value={payer} onChange={e=>setPayer(e.target.value)}
-              className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none appearance-none">
-              {members.map(m => <option key={mname(m)}>{mname(m)}</option>)}
+        {/* Column mapping */}
+        {[['date','日期'],['desc','說明'],['amount','金額']].map(([f,l])=>
+          <div key={f} className="flex items-center gap-3 mb-2">
+            <span className="text-sm text-tx2 w-10">{l}</span>
+            <select value={colMap[f]} onChange={e=>setColMap(m=>({...m,[f]:parseInt(e.target.value)}))}
+              className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2 text-sm text-tx outline-none">
+              <option value="-1">— 選擇 —</option>
+              {cols.map((c,i)=><option key={i} value={i}>{c}</option>)}
             </select>
-          </div>
+          </div>)}
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-sm text-tx2 w-10">付款</span>
+          <select value={payer} onChange={e=>setPayer(e.target.value)}
+            className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2 text-sm text-tx outline-none">
+            {members.map(m=><option key={mname(m)}>{mname(m)}</option>)}
+          </select>
         </div>
-
-        {/* Category */}
-        <div className="mb-5">
-          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分類</label>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {CATS.map(c => (
-              <button key={c} onClick={()=>setCat(c)}
-                className={`flex-shrink-0 px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 transition-all press
-                  ${cat===c?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
-                {CICO[c]} {c}
-              </button>
-            ))}
-          </div>
+        {/* Preview */}
+        <div className="max-h-48 overflow-y-auto bg-c2 rounded-xl mb-3">
+          {rows.slice(0,30).map((r,i)=>{
+            const dt=colMap.date>=0?normDate(String(r[colMap.date]||'').trim()):'';
+            const desc=colMap.desc>=0?String(r[colMap.desc]||'').trim():'';
+            const amt=colMap.amount>=0?Math.abs(parseFloat(String(r[colMap.amount]||'').replace(/,/g,'').replace(/[^0-9.\-]/g,''))||0):0;
+            return<div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-bd last:border-0">
+              <input type="checkbox" checked={r._chk!==false} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,_chk:e.target.checked}:x))} className="w-4 h-4 flex-shrink-0"/>
+              <span className="text-xs text-tx2 w-16 flex-shrink-0">{dt.slice(5)}</span>
+              <span className="flex-1 text-sm truncate">{desc}</span>
+              <span className="text-sm font-bold flex-shrink-0">{amt?fmt(amt):'-'}</span>
+              <button onClick={()=>setRows(rs=>rs.filter((_,j)=>j!==i))} className="text-tx3 text-sm px-1">🗑</button>
+            </div>;})}
         </div>
+        <Btn onClick={doImport}>⬆️ 匯入選取的帳目</Btn>
+      </div>}
+    </>}
 
-        {/* Split mode */}
-        <div className="mb-5">
-          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分攤方式</label>
-          <div className="flex bg-c2 rounded-2xl p-1 gap-1 mb-3">
-            {[['equal','⚖️ 平均'],['custom','✏️ 自訂']].map(([v,l]) => (
-              <button key={v} onClick={()=>setSplit(v)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all
-                  ${split===v?'bg-pri text-bg':'text-tx2'}`}>{l}</button>
-            ))}
+    {tab==='ai'&&<>
+      {!rows.length?
+        <label className={`block border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${aiLoading?'border-pri':'border-bd hover:border-pri'}`}>
+          {aiLoading?<><p className="text-4xl mb-2">⏳</p><p className="text-sm text-tx2">AI 分析中，請稍候…</p></>
+            :<><p className="text-4xl mb-2">🖼️</p><p className="text-sm text-tx2">點擊上傳帳單截圖</p><p className="text-xs text-tx3 mt-1">.jpg .png .pdf</p></>}
+          {!aiLoading&&<input type="file" accept="image/*,.pdf" className="hidden" onChange={e=>e.target.files[0]&&doAiOcr(e.target.files[0])}/>}
+        </label>:
+        <div>
+          <p className="text-sm text-tx2 mb-2">識別到 {rows.length} 筆</p>
+          <div className="max-h-48 overflow-y-auto bg-c2 rounded-xl mb-3">
+            {rows.map((r,i)=><div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-bd last:border-0">
+              <input type="checkbox" checked={r._chk!==false} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,_chk:e.target.checked}:x))} className="w-4 h-4 flex-shrink-0"/>
+              <span className="text-xs text-tx2 w-16 flex-shrink-0">{String(r[0]).slice(5)}</span>
+              <span className="flex-1 text-sm truncate">{r[1]}</span>
+              <span className="text-sm font-bold">{fmt(r[2])}</span>
+            </div>)}
           </div>
-
-          {split === 'equal' ? (
-            <div className="flex flex-wrap gap-2">
-              {members.map(m => {
-                const n = mname(m);
-                const on = selected.includes(n);
-                return (
-                  <button key={n} onClick={()=>toggleMember(n)}
-                    className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl border-2 transition-all press
-                      ${on?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}
-                    style={{minWidth:'72px'}}>
-                    <span className="text-2xl">{mav(m)}</span>
-                    <span className="text-sm font-semibold">{n}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="bg-c2 rounded-2xl overflow-hidden border border-bd">
-              {members.map((m,i) => {
-                const n = mname(m);
-                return (
-                  <div key={n} className={`flex items-center gap-3 px-4 py-3 ${i<members.length-1?'border-b border-bd':''}`}>
-                    <span className="text-2xl">{mav(m)}</span>
-                    <span className="flex-1 font-semibold text-base">{n}</span>
-                    <div className="relative w-28">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-tx3 text-sm pointer-events-none">NT$</span>
-                      <input type="number" value={customAmt[n]||''} onChange={e=>setCustomAmt(p=>({...p,[n]:e.target.value}))}
-                        className="w-full bg-c3 border border-bd rounded-xl pl-9 pr-3 py-2 text-sm font-bold text-right text-tx outline-none focus:border-pri"
-                        placeholder="0" inputMode="decimal" />
-                    </div>
-                  </div>
-                );
-              })}
-              {totalAmt > 0 && (
-                <div className={`px-4 py-2 text-center text-sm font-semibold ${Math.abs(customSum-totalAmt)<0.5?'text-grn bg-grn/10':'text-red bg-red/10'}`}>
-                  {Math.abs(customSum-totalAmt)<0.5 ? `✅ 合計 ${fmt(customSum)} 相符` :
-                    customSum < totalAmt ? `⚠ 還差 ${fmt(totalAmt-customSum)}` : `⚠ 超出 ${fmt(customSum-totalAmt)}`}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Fixed bottom submit */}
-      <div className="flex-shrink-0 px-4 pt-3 pb-3 border-t border-bd safe-bot bg-bg">
-        <button onClick={handleSubmit} disabled={loading}
-          className="w-full py-4 rounded-2xl bg-pri text-bg text-lg font-black disabled:opacity-50 press active:scale-95 transition-transform">
-          {loading ? '記帳中…' : '✓ 記帳'}
-        </button>
-      </div>
-    </div>
-  );
+          <div className="flex gap-2 mb-3">
+            <select value={payer} onChange={e=>setPayer(e.target.value)}
+              className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2 text-sm text-tx outline-none">
+              {members.map(m=><option key={mname(m)}>{mname(m)}</option>)}
+            </select>
+            <button onClick={()=>setRows([])} className="px-4 bg-c2 border border-bd rounded-xl text-sm text-tx2">重試</button>
+          </div>
+          <Btn onClick={doImport}>⬆️ 匯入選取的帳目</Btn>
+        </div>}
+    </>}
+  </Sheet>;
 }
 
-// ── RECORDS PAGE ──
-function RecordsPage({ data, onDelete }) {
-  const { expenses=[], members=[] } = data;
-  if (!expenses.length) return (
-    <div className="pb-nav flex flex-col items-center justify-center min-h-screen text-center px-6">
-      <p className="text-5xl mb-4">📭</p>
-      <p className="text-lg font-bold">還沒有帳目</p>
-      <p className="text-tx2 text-sm mt-1">點 ＋ 新增第一筆</p>
-    </div>
-  );
-
-  const groups = {};
-  expenses.forEach(e => {
-    const m = (e.date||'').slice(0,7);
-    if (!groups[m]) groups[m] = [];
-    groups[m].push(e);
-  });
-
-  const slb = (p) => {
-    if (Array.isArray(p)) return p.length === members.length ? '所有人平分' : p.join('、')+' 平分';
-    if (p && typeof p==='object') return Object.entries(p).map(([k,v])=>`${k} ${fmt(v)}`).join(' / ');
-    return '';
-  };
-
-  return (
-    <div className="pb-nav">
-      <div className="safe-top" />
-      <div className="px-5 pt-4 pb-2">
-        <h1 className="text-2xl font-black">帳目</h1>
-        <p className="text-tx2 text-sm mt-1">共 {expenses.length} 筆</p>
-      </div>
-      {Object.keys(groups).sort().reverse().map(month => (
-        <div key={month}>
-          <p className="px-5 py-2 text-xs font-bold text-tx3 uppercase tracking-wider">{month}</p>
-          <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-3">
-            {groups[month].map((e,i) => (
-              <div key={e.id} className={`flex items-center gap-3 px-4 py-3 ${i<groups[month].length-1?'border-b border-bd':''}`}>
-                <div className="w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0">{CICO[e.category]||'📌'}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-base truncate">{e.description}</p>
-                  <p className="text-xs text-tx2 mt-0.5 truncate">{e.date?.slice(5)} · {e.payer} 付 · {slb(e.participants)}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="font-bold text-base">{fmt(e.amount)}</p>
-                </div>
-                <button onClick={()=>{ if(confirm('確定刪除？')) onDelete(e.id); }}
-                  className="text-tx3 text-lg px-1 py-1 ml-1 press">🗑</button>
-              </div>
-            ))}
+// ══ SETTLE PAGE ══
+function SettlePage({data,ledgerId,onRefresh,toast}){
+  const{members=[],expenses=[],settlement={},settles=[]}=data;
+  const{balance={},transactions=[]}=settlement;
+  const[showDetail,setShowDetail]=useState(null);
+  const doSettle=async()=>{
+    const note=prompt('結清備註（可留空）','');if(note===null)return;
+    const snap={transactions,expense_count:expenses.length,
+      balances:Object.entries(balance).map(([p,a])=>({person:p,amount:Math.round(a)}))};
+    try{await gasCall('addSettle',{data:{note:note||'結清 '+new Date().toLocaleDateString('zh-TW'),settled_at:new Date().toISOString(),snapshot:snap},ledgerId});
+      toast('✅ 結清紀錄已儲存','ok');onRefresh();}
+    catch(e){toast('儲存失敗: '+e.message,'err');}};
+  const delSettle=async id=>{
+    if(!confirm('確定刪除？'))return;
+    try{await gasCall('deleteSettle',{id,ledgerId});toast('已刪除');onRefresh();}
+    catch(e){toast('刪除失敗','err');}};
+  return<div className="pb-nav">
+    <div className="pt-safe"/>
+    <div className="px-5 pt-4 pb-2"><h1 className="text-2xl font-black">結算</h1></div>
+    <SectionHeader title="各人餘額"/>
+    <Card>{!members.length&&<p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
+      {members.map((m,i)=>{const a=balance[mname(m)]||0;
+        return<Row key={i} left={mav(m)} title={mname(m)}
+          sub={a>0.5?`待收 ${fmt(a)}`:a<-0.5?`待付 ${fmt(a)}`:'已結清'}
+          right={<span className={`font-black ${a>0.5?'text-grn':a<-0.5?'text-red':'text-tx3'}`}>{(a>=0?'+':'')}{fmt(a)}</span>}/>;
+      })}
+    </Card>
+    <SectionHeader title="轉帳建議"/>
+    <Card>{transactions.length===0&&members.length>0?
+      <p className="px-4 py-5 text-grn font-bold text-center">🎉 目前已結清！</p>:
+      transactions.map((t,i)=>{
+        const mf=members.find(m=>mname(m)===t.from)||t.from;
+        const mt=members.find(m=>mname(m)===t.to)||t.to;
+        return<div key={i} className="flex items-center px-4 py-4 border-b border-bd last:border-0">
+          <div className="flex flex-col items-center w-16 flex-shrink-0">
+            <span className="text-2xl">{mav(mf)}</span>
+            <span className="text-xs text-tx2 mt-1 truncate w-16 text-center font-semibold">{t.from}</span>
           </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── SETTLE PAGE ──
-function SettlePage({ data }) {
-  const { members=[], settlement={} } = data;
-  const { balance={}, transactions=[] } = settlement;
-
-  return (
-    <div className="pb-nav">
-      <div className="safe-top" />
-      <div className="px-5 pt-4 pb-3">
-        <h1 className="text-2xl font-black">結算</h1>
-      </div>
-
-      <div className="px-5 mb-2">
-        <p className="text-xs font-bold text-tx3 uppercase tracking-wider">各人餘額</p>
-      </div>
-      <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-5">
-        {members.length === 0 && <p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
-        {members.map((m,i) => {
-          const a = balance[mname(m)] || 0;
-          const sub = a>0.5?`待收 ${fmt(a)}`:a<-0.5?`待付 ${fmt(a)}`:'已結清';
-          return (
-            <div key={i} className={`flex items-center gap-3 px-4 py-3 ${i<members.length-1?'border-b border-bd':''}`}>
-              <div className="w-11 h-11 rounded-full bg-c2 flex items-center justify-center text-2xl">{mav(m)}</div>
-              <div className="flex-1">
-                <p className="font-bold text-base">{mname(m)}</p>
-                <p className="text-xs text-tx2 mt-0.5">{sub}</p>
-              </div>
-              <p className={`font-black text-lg ${a>0.5?'text-grn':a<-0.5?'text-red':'text-tx3'}`}>
-                {(a>=0?'+':'')}{fmt(a)}
-              </p>
+          <div className="flex-1 flex flex-col items-center gap-1 px-2">
+            <span className="text-xs text-tx3">需要支付</span>
+            <span className="text-xl font-black text-pri">{fmt(t.amount)}</span>
+            <div className="w-full flex items-center gap-1">
+              <div className="flex-1 h-0.5 bg-bd"/>
+              <div className="w-0 h-0 border-t-[5px] border-b-[5px] border-l-[8px] border-transparent border-l-pri"/>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="px-5 mb-2">
-        <p className="text-xs font-bold text-tx3 uppercase tracking-wider">轉帳建議</p>
-      </div>
-      <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-5">
-        {transactions.length === 0
-          ? <p className="px-4 py-5 text-grn text-sm font-bold text-center">🎉 目前已結清！</p>
-          : transactions.map((t,i) => {
-            const mf = members.find(m=>mname(m)===t.from)||t.from;
-            const mt = members.find(m=>mname(m)===t.to)||t.to;
-            return (
-              <div key={i} className={`flex items-center px-4 py-4 ${i<transactions.length-1?'border-b border-bd':''}`}>
-                <div className="flex flex-col items-center w-20">
-                  <span className="text-2xl">{mav(mf)}</span>
-                  <span className="text-xs text-tx2 font-semibold mt-1 truncate w-20 text-center">{t.from}</span>
-                </div>
-                <div className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs text-tx3">需要支付</span>
-                  <span className="text-xl font-black text-pri">{fmt(t.amount)}</span>
-                  <div className="w-4/5 h-0.5 bg-bd relative">
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0 h-0 border-t-[5px] border-b-[5px] border-l-[9px] border-transparent border-l-pri" />
-                  </div>
-                </div>
-                <div className="flex flex-col items-center w-20">
-                  <span className="text-2xl">{mav(mt)}</span>
-                  <span className="text-xs text-tx2 font-semibold mt-1 truncate w-20 text-center">{t.to}</span>
-                </div>
-              </div>
-            );
-          })}
-      </div>
-    </div>
-  );
+          </div>
+          <div className="flex flex-col items-center w-16 flex-shrink-0">
+            <span className="text-2xl">{mav(mt)}</span>
+            <span className="text-xs text-tx2 mt-1 truncate w-16 text-center font-semibold">{t.to}</span>
+          </div>
+        </div>;})}</Card>
+    {transactions.length>0&&<div className="px-4 mb-4">
+      <Btn onClick={doSettle}>✅ 結清並記錄</Btn></div>}
+    {settles.length>0&&<>
+      <SectionHeader title="歷史結清"/>
+      <Card>{settles.map((s,i)=>{
+        const dt=s.settled_at?new Date(s.settled_at).toLocaleDateString('zh-TW'):'';
+        const snap=s.snapshot||{};
+        return<Row key={i} left="📋" title={s.note||'結清紀錄'} sub={`${dt}${snap.expense_count?' · '+snap.expense_count+'筆':''}`}
+          onDel={()=>delSettle(s.id)} onClick={()=>setShowDetail(s)}/>;})}</Card>
+    </>}
+    {showDetail&&<Sheet title={showDetail.note||'結清紀錄'} onClose={()=>setShowDetail(null)}>
+      <p className="text-xs text-tx3 mb-3">{showDetail.settled_at?new Date(showDetail.settled_at).toLocaleDateString('zh-TW'):''}</p>
+      {(showDetail.snapshot?.transactions||[]).map((t,i)=>
+        <div key={i} className="flex items-center justify-between py-2 border-b border-bd last:border-0">
+          <span className="text-base">{t.from} → {t.to}</span>
+          <span className="font-black text-pri">{fmt(t.amount)}</span>
+        </div>)}
+      <div className="mt-4"><Btn onClick={()=>setShowDetail(null)} variant="ghost">關閉</Btn></div>
+    </Sheet>}
+  </div>;
 }
 
-// ── MEMBERS PAGE ──
-function MembersPage({ data, onSave, toast }) {
-  const { members=[] } = data;
-  const [newName, setNewName] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const addMember = async () => {
-    const name = newName.trim();
-    if (!name) return;
-    if (members.some(m=>mname(m)===name)) { toast('成員已存在','err'); return; }
+// ══ MEMBERS PAGE ══
+function MembersPage({data,ledgerId,onRefresh,toast}){
+  const{members=[]}=data;
+  const[newName,setNewName]=useState('');
+  const[saving,setSaving]=useState(false);
+  const shareUrl=window.location.href.replace(/[?&]createOAuthDialog=true/g,'').split('#')[0]+'#l='+ledgerId;
+  const copyLink=()=>{navigator.clipboard?.writeText(shareUrl).then(()=>toast('✅ 連結已複製','ok'))||prompt('複製此連結：',shareUrl);};
+  const add=async()=>{
+    const name=newName.trim();if(!name)return;
+    if(members.some(m=>mname(m)===name)){toast('成員已存在','err');return;}
     setSaving(true);
-    try {
-      const updated = [...members, { name, avatar: '' }];
-      await onSave(updated);
-      setNewName('');
-      toast('✅ 已新增 '+name,'ok');
-    } catch(e) { toast('儲存失敗','err'); }
-    finally { setSaving(false); }
-  };
-
-  const removeMember = async (name) => {
-    if (!confirm(`確定移除「${name}」？`)) return;
-    try {
-      await onSave(members.filter(m=>mname(m)!==name));
-      toast('已移除 '+name);
-    } catch(e) { toast('移除失敗','err'); }
-  };
-
-  return (
-    <div className="pb-nav">
-      <div className="safe-top" />
-      <div className="px-5 pt-4 pb-3">
-        <h1 className="text-2xl font-black">成員</h1>
-        <p className="text-tx2 text-sm mt-1">{members.length} 位成員</p>
+    try{const updated=[...members,{name,avatar:''}];
+      await gasCall('saveMembers',{members:updated,ledgerId});
+      setNewName('');onRefresh();toast('✅ 已新增 '+name,'ok');}
+    catch(e){toast('儲存失敗','err');}finally{setSaving(false);}};
+  const remove=async name=>{
+    if(!confirm(`確定移除「${name}」？`))return;
+    try{await gasCall('saveMembers',{members:members.filter(m=>mname(m)!==name),ledgerId});
+      onRefresh();toast('已移除 '+name);}
+    catch(e){toast('移除失敗','err');}};
+  return<div className="pb-nav">
+    <div className="pt-safe"/>
+    <div className="px-5 pt-4 pb-2"><h1 className="text-2xl font-black">成員</h1>
+      <p className="text-tx2 text-sm mt-0.5">{members.length} 位成員</p></div>
+    <Card>
+      {!members.length&&<p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員</p>}
+      {members.map((m,i)=><Row key={i} left={mav(m)} title={mname(m)} onDel={()=>remove(mname(m))}/>)}
+      <div className="flex gap-3 px-4 py-3 border-t border-bd">
+        <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()}
+          className="flex-1 bg-c3 border border-bd rounded-xl px-4 py-3 text-base text-tx outline-none focus:border-pri"
+          placeholder="輸入姓名" maxLength={10}/>
+        <button onClick={add} disabled={saving}
+          className="px-5 py-3 bg-pri rounded-xl text-bg font-black text-base disabled:opacity-50">新增</button>
       </div>
-
-      <div className="mx-4 bg-c1 rounded-2xl overflow-hidden border border-bd mb-5">
-        {members.length === 0 && (
-          <p className="px-4 py-4 text-tx2 text-sm text-center">尚無成員，請新增</p>
-        )}
-        {members.map((m,i) => (
-          <div key={i} className={`flex items-center gap-3 px-4 py-3 ${i<members.length-1?'border-b border-bd':''}`}>
-            <div className="w-11 h-11 rounded-full bg-c2 flex items-center justify-center text-2xl">{mav(m)}</div>
-            <p className="flex-1 font-bold text-base">{mname(m)}</p>
-            <button onClick={()=>removeMember(mname(m))}
-              className="text-tx3 text-lg px-2 py-2 press">✕</button>
-          </div>
-        ))}
-        <div className="flex gap-3 px-4 py-3 border-t border-bd">
-          <input value={newName} onChange={e=>setNewName(e.target.value)}
-            onKeyDown={e=>e.key==='Enter'&&addMember()}
-            className="flex-1 bg-c3 border border-bd rounded-xl px-4 py-3 text-base text-tx outline-none focus:border-pri"
-            placeholder="輸入姓名" maxLength={10} />
-          <button onClick={addMember} disabled={saving}
-            className="px-5 py-3 bg-pri rounded-xl text-bg font-black text-base disabled:opacity-50 press">
-            新增
-          </button>
+    </Card>
+    {/* Share link */}
+    <SectionHeader title="分享帳本"/>
+    <Card>
+      <div className="px-4 py-4">
+        <p className="text-sm text-tx2 mb-3">分享此連結給朋友，一起記帳</p>
+        <div className="flex gap-2 items-center bg-c2 rounded-xl px-3 py-2.5 mb-3 border border-bd">
+          <p className="flex-1 text-xs text-tx3 truncate">{shareUrl}</p>
         </div>
+        <Btn onClick={copyLink} variant="ghost">🔗 複製連結</Btn>
       </div>
-
-      <div className="mx-4 bg-c1 rounded-2xl p-4 border border-bd">
-        <p className="text-sm font-bold text-tx2 mb-2">💡 提示</p>
-        <p className="text-sm text-tx3 leading-relaxed">
-          分享帳本連結給朋友，大家可以同時記帳。<br />
-          右上角 🔗 複製連結。
-        </p>
+    </Card>
+    {/* API settings */}
+    <SectionHeader title="設定"/>
+    <Card>
+      <div className="px-4 py-4">
+        <p className="text-sm text-tx2">帳本 ID：<span className="text-tx font-bold">{ledgerId}</span></p>
+        <p className="text-xs text-tx3 mt-2">後端：{GAS_URL?'已連接 Google Sheets':'使用 Mock 資料'}</p>
       </div>
-    </div>
-  );
+    </Card>
+  </div>;
 }
 
-// ── BOTTOM NAV ──
-function BottomNav({ page, onNav, onAdd }) {
-  const tabs = [
-    { id:'home', icon:'📊', label:'總覽' },
-    { id:'records', icon:'📋', label:'帳目' },
-    null, // FAB placeholder
-    { id:'settle', icon:'💸', label:'結算' },
-    { id:'members', icon:'👥', label:'成員' },
-  ];
-  return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-c1/95 backdrop-blur-xl border-t border-bd z-40 flex items-center px-2 safe-bot"
-      style={{height:'calc(60px + env(safe-area-inset-bottom,0px))'}}>
-      {tabs.map((tab, i) => tab === null ? (
-        <div key="fab" className="flex-1 flex justify-center items-center">
-          <button onClick={onAdd}
-            className="w-14 h-14 rounded-full bg-pri flex items-center justify-center text-2xl text-bg font-black shadow-lg press active:scale-90 transition-transform"
-            style={{boxShadow:'0 0 0 8px rgba(245,200,66,.12), 0 4px 20px rgba(245,200,66,.35)'}}>
-            ＋
-          </button>
-        </div>
-      ) : (
-        <button key={tab.id} onClick={()=>onNav(tab.id)}
-          className={`flex-1 flex flex-col items-center justify-center gap-1 h-full press
-            ${page===tab.id?'text-pri':'text-tx3'}`}>
-          <span className="text-2xl leading-none">{tab.icon}</span>
-          <span className="text-xs font-bold">{tab.label}</span>
-        </button>
-      ))}
-    </nav>
-  );
+// ══ NAV ══
+function Nav({page,onNav,onAdd}){
+  const tabs=[{id:'home',icon:'📊',label:'總覽'},{id:'records',icon:'📋',label:'帳目'},null,{id:'settle',icon:'💸',label:'結算'},{id:'members',icon:'👥',label:'成員'}];
+  return<nav className="fixed bottom-0 left-0 right-0 bg-c1/95 backdrop-blur-xl border-t border-bd z-40 flex items-center px-2 pb-safe"
+    style={{height:'calc(60px + env(safe-area-inset-bottom,0px))'}}>
+    {tabs.map((t,i)=>t===null?
+      <div key="fab" className="flex-1 flex justify-center items-center">
+        <button onClick={onAdd} className="w-14 h-14 rounded-full bg-pri flex items-center justify-center text-2xl text-bg font-black shadow-lg active:scale-90 transition-transform"
+          style={{boxShadow:'0 0 0 8px rgba(245,200,66,.12),0 4px 20px rgba(245,200,66,.35)'}}>＋</button>
+      </div>:
+      <button key={t.id} onClick={()=>onNav(t.id)}
+        className={`flex-1 flex flex-col items-center justify-center gap-1 h-full active:opacity-70 ${page===t.id?'text-pri':'text-tx3'}`}>
+        <span className="text-2xl leading-none">{t.icon}</span>
+        <span className="text-xs font-bold">{t.label}</span>
+      </button>)}
+  </nav>;
 }
 
-// ══════════════════════════════════════════
-// APP ROOT
-// ══════════════════════════════════════════
-function App() {
-  const [page, setPage] = useState('home');
-  const [showAdd, setShowAdd] = useState(false);
-  const [data, setData] = useState({ expenses:[], members:[], settlement:{balance:{},transactions:[]} });
-  const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
-  const [ledgerId] = useState(() => {
-    const h = location.hash;
-    return h.startsWith('#l=') ? h.slice(3) : 'default';
-  });
+// ══ APP ══
+function App(){
+  const[page,setPage]=useState('home');
+  const[showAdd,setShowAdd]=useState(false);
+  const[showImport,setShowImport]=useState(false);
+  const[data,setData]=useState({expenses:[],members:[],settlement:{balance:{},transactions:[]},settles:[]});
+  const[loading,setLoading]=useState(true);
+  const[toast,setToast]=useState(null);
+  const[ledgerId]=useState(()=>{const h=location.hash;return h.startsWith('#l=')?h.slice(3):'default';});
+  const showToast=(msg,type='')=>setToast({msg,type});
 
-  const showToast = (msg, type='') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 2500);
-  };
+  const load=useCallback(async()=>{
+    try{const d=await gasCall('getAll',{ledgerId});
+      // Recalculate settlement locally to ensure freshness
+      const settle=calcSettle(d.expenses||[],d.members||[]);
+      setData({...d,settlement:d.settlement||settle,settles:d.settles||[]});
+    }catch(e){showToast('載入失敗: '+e.message,'err');}
+    finally{setLoading(false);}
+  },[ledgerId]);
 
-  const loadData = useCallback(async () => {
-    try {
-      const d = await api.getAll(ledgerId);
-      setData(d);
-    } catch(e) { showToast('載入失敗','err'); }
-    finally { setLoading(false); }
-  }, [ledgerId]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{
+    const t=setInterval(()=>{if(!document.hidden)load();},6000);
+    return()=>clearInterval(t);
+  },[load]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const handleAdd=async expData=>{
+    await gasCall('add',{data:expData,ledgerId});
+    await load();};
+  const handleDelete=async id=>{
+    try{await gasCall('delete',{id,ledgerId});await load();showToast('已刪除');}
+    catch(e){showToast('刪除失敗','err');}};
 
-  // Poll for updates every 5 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (!document.hidden) loadData();
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [loadData]);
+  if(loading)return<div className="min-h-screen bg-bg flex items-center justify-center"><Spin/></div>;
 
-  const handleAdd = async (expData) => {
-    await api.add(expData, ledgerId);
-    await loadData();
-  };
-
-  const handleDelete = async (id) => {
-    try {
-      await api.del(id, ledgerId);
-      await loadData();
-      showToast('已刪除');
-    } catch(e) { showToast('刪除失敗','err'); }
-  };
-
-  const handleSaveMembers = async (members) => {
-    await api.saveMembers(members, ledgerId);
-    await loadData();
-  };
-
-  if (loading) return (
-    <div className="min-h-screen bg-bg flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-bd border-t-pri rounded-full animate-spin" />
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-bg text-tx">
-      {page === 'home' && <HomePage data={data} onAdd={()=>setShowAdd(true)} />}
-      {page === 'records' && <RecordsPage data={data} onDelete={handleDelete} />}
-      {page === 'settle' && <SettlePage data={data} />}
-      {page === 'members' && <MembersPage data={data} onSave={handleSaveMembers} toast={showToast} />}
-
-      {showAdd && (
-        <AddPage
-          members={data.members}
-          onSave={handleAdd}
-          onClose={()=>setShowAdd(false)}
-          toast={showToast}
-        />
-      )}
-
-      <BottomNav page={page} onNav={setPage} onAdd={()=>setShowAdd(true)} />
-
-      {toast && <Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)} />}
-    </div>
-  );
+  return<div className="min-h-screen bg-bg text-tx">
+    {page==='home'&&<HomePage data={data} onGoPage={setPage}/>}
+    {page==='records'&&<RecordsPage data={data} onDelete={handleDelete} onImport={()=>setShowImport(true)}/>}
+    {page==='settle'&&<SettlePage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast}/>}
+    {page==='members'&&<MembersPage data={data} ledgerId={ledgerId} onRefresh={load} toast={showToast}/>}
+    {showAdd&&<AddPage members={data.members} onSave={handleAdd} onClose={()=>setShowAdd(false)} toast={showToast}/>}
+    {showImport&&<ImportSheet members={data.members} ledgerId={ledgerId} onDone={()=>{setShowImport(false);load();}} toast={showToast}/>}
+    <Nav page={page} onNav={setPage} onAdd={()=>setShowAdd(true)}/>
+    {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
+  </div>;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
