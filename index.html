@@ -702,20 +702,21 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
       const obj={};Object.entries(editCustom).forEach(([k,v])=>{if(parseFloat(v)>0)obj[k]=parseFloat(v);});
       parts=Object.keys(obj).length?obj:editingExp.participants;
     }else if(editSplit==='adjust'){
-      // Adjusted split: total - individual deductions, rest split equally
       const total=parseFloat(editAmount)||editingExp.amount;
       const deductions=editAdjust||{};
       const totalDeducted=Object.values(deductions).reduce((a,b)=>a+(parseFloat(b)||0),0);
       const splitPeople=editAdjSel.length?editAdjSel:members.map(mname);
-      const perPerson=splitPeople.length>0?(total-totalDeducted)/splitPeople.length:0;
+      const perPerson=splitPeople.length>0?Math.round((total-totalDeducted)/splitPeople.length*100)/100:0;
       const obj={};
       members.forEach(m=>{
         const n=mname(m);
         const ded=parseFloat(deductions[n])||0;
         const share=splitPeople.includes(n)?perPerson:0;
-        if(ded+share>0) obj[n]=Math.round((ded+share)*100)/100;
+        const total_share=Math.round((ded+share)*100)/100;
+        if(total_share>0) obj[n]=total_share;
       });
-      parts=obj;
+      // fallback if obj is empty
+      parts=Object.keys(obj).length>0?obj:members.map(mname);
     }
     fetch(GAS_URL,{method:'POST',
       body:JSON.stringify({action:'updateExpense',id:editingExp.id,
@@ -733,29 +734,34 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
 
   const ExpRow=({e,settled=false})=>{
     const[swipeX,setSwipeX]=useState(0);
-    const[swiping,setSwiping]=useState(false);
     const startX=useRef(0);
-    const handleTouchStart=ev=>{startX.current=ev.touches[0].clientX;setSwiping(true);};
-    const handleTouchMove=ev=>{
-      const dx=ev.touches[0].clientX-startX.current;
-      if(dx<0)setSwipeX(Math.max(dx,-80));
+    const startY=useRef(0);
+    const isH=useRef(false);
+    const onTS=ev=>{
+      startX.current=ev.touches[0].clientX;
+      startY.current=ev.touches[0].clientY;
+      isH.current=false;
     };
-    const handleTouchEnd=()=>{
-      setSwiping(false);
-      if(swipeX<-50)setSwipeX(-80);else setSwipeX(0);
+    const onTM=ev=>{
+      const dx=ev.touches[0].clientX-startX.current;
+      const dy=ev.touches[0].clientY-startY.current;
+      if(!isH.current&&Math.abs(dx)>Math.abs(dy)*1.5) isH.current=true;
+      if(isH.current&&dx<0) setSwipeX(Math.max(dx,-72));
+    };
+    const onTE=()=>{
+      if(swipeX<-36) setSwipeX(-72); else setSwipeX(0);
     };
     return(
     <div className={`relative overflow-hidden border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
-      {/* Delete button revealed on swipe */}
-      {!settled&&<div className="absolute right-0 top-0 bottom-0 w-20 bg-red flex items-center justify-center"
-        onClick={()=>{if(confirm('確定刪除？'))onDelete(e.id);setSwipeX(0);}}>
-        <span className="text-white font-bold text-sm">🗑<br/>刪除</span>
+      {!settled&&<div style={{position:'absolute',right:0,top:0,bottom:0,width:'72px',background:'#e53935',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer'}}
+        onClick={e=>{e.stopPropagation();if(confirm('確定刪除？')){onDelete(e.id);}}}>
+        <span style={{fontSize:'20px'}}>🗑</span>
+        <span style={{color:'#fff',fontWeight:700,fontSize:'12px',marginTop:'2px'}}>刪除</span>
       </div>}
-      <div className={`flex gap-3 px-4 py-3.5`}
-        style={{transform:`translateX(${swipeX}px)`,transition:swiping?'none':'transform 0.2s ease',background:'var(--c1)'}}
-        onTouchStart={!settled?handleTouchStart:undefined}
-        onTouchMove={!settled?handleTouchMove:undefined}
-        onTouchEnd={!settled?handleTouchEnd:undefined}
+      <div style={{transform:`translateX(${swipeX}px)`,transition:swipeX===0||swipeX===-72?'transform .2s ease':'none',background:'var(--c1)',display:'flex',gap:'12px',padding:'14px 16px',alignItems:'flex-start'}}
+        onTouchStart={!settled?onTS:undefined}
+        onTouchMove={!settled?onTM:undefined}
+        onTouchEnd={!settled?onTE:undefined}
         onClick={swipeX<-10?()=>setSwipeX(0):undefined}>
       <div onClick={()=>{if(!settled){
   setEditCat(e.category||'其他');
@@ -800,7 +806,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
           <span className="opacity-60">📝</span>{e.note}
         </p>}
       </div>
-      <div className="flex-shrink-0 text-right flex flex-col items-end gap-1">
+      <div style={{flexShrink:0,textAlign:'right'}}>
         <p className="font-black text-base">{fmt(e.amount)}</p>
       </div>
       </div>
