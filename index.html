@@ -671,6 +671,9 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
   const[editDate,setEditDate]=useState('');
   const[editAmount,setEditAmount]=useState('');
   const[editShowCalc,setEditShowCalc]=useState(false);
+  const[editSplit,setEditSplit]=useState('equal');
+  const[editSel,setEditSel]=useState([]);
+  const[editCustom,setEditCustom]=useState({});
   const[editCat,setEditCat]=useState('');
   const saveExpEdit=async()=>{
     if(!editingExp)return;
@@ -690,13 +693,37 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
 
   const ExpRow=({e,settled=false})=>(
     <div className={`flex gap-3 px-4 py-3.5 border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
-      <div onClick={()=>{if(!settled){setEditCat(e.category||'其他');setEditNote(e.note||'');setEditDesc(e.description||'');setEditDate(e.date||'');setEditAmount(String(e.amount||''));setEditingExp(e);}}}
+      <div onClick={()=>{if(!settled){
+  setEditCat(e.category||'其他');
+  setEditNote(e.note||'');
+  setEditDesc(e.description||'');
+  setEditDate(e.date||'');
+  setEditAmount(String(e.amount||''));
+  const ps=e.participants;
+  if(Array.isArray(ps)){setEditSplit('equal');setEditSel(ps);setEditCustom({});}
+  else if(ps&&typeof ps==='object'){setEditSplit('custom');setEditCustom(ps);setEditSel(Object.keys(ps));}
+  else{setEditSplit('equal');setEditSel(data.members.map(mname));setEditCustom({});}
+  setEditShowCalc(false);
+  setEditingExp(e);
+}}}
         className={`w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0 relative cursor-pointer ${settled?'':'active:scale-90 transition-transform'}`}>
         {(getCico())[e.category]||'📌'}
         {!settled&&<span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-pri border border-bg flex items-center justify-center text-bg font-black" style={{fontSize:'9px'}}>✏</span>}
       </div>
       <div className={`flex-1 min-w-0 ${!settled?'cursor-pointer':''}`}
-        onClick={()=>{if(!settled){setEditCat(e.category||'其他');setEditNote(e.note||'');setEditDesc(e.description||'');setEditDate(e.date||'');setEditAmount(String(e.amount||''));setEditingExp(e);}}}>
+        onClick={()=>{if(!settled){
+  setEditCat(e.category||'其他');
+  setEditNote(e.note||'');
+  setEditDesc(e.description||'');
+  setEditDate(e.date||'');
+  setEditAmount(String(e.amount||''));
+  const ps=e.participants;
+  if(Array.isArray(ps)){setEditSplit('equal');setEditSel(ps);setEditCustom({});}
+  else if(ps&&typeof ps==='object'){setEditSplit('custom');setEditCustom(ps);setEditSel(Object.keys(ps));}
+  else{setEditSplit('equal');setEditSel(data.members.map(mname));setEditCustom({});}
+  setEditShowCalc(false);
+  setEditingExp(e);
+}}}>
         <div className="flex items-start gap-2">
           <p className="font-semibold text-base leading-tight flex-1 truncate">{e.description}</p>
           {settled&&<span className="text-[10px] font-bold text-tx3 bg-bd px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5">已結算</span>}
@@ -758,27 +785,34 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
 
     {/* Edit expense sheet */}
     {editingExp&&<Sheet title="編輯帳目" onClose={()=>setEditingExp(null)}>
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      {/* Date + Amount side by side */}
+      <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
           <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">日期</label>
           <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)}
             className="w-full bg-c2 border-2 border-bd rounded-2xl px-3 py-3 text-sm text-tx focus:border-pri outline-none"/>
         </div>
         <div>
-          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">金額</label>
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">
+            金額
+            <button onClick={()=>setEditShowCalc(s=>!s)} className={`ml-2 text-[10px] px-2 py-0.5 rounded-lg border ${editShowCalc?'border-pri text-pri':'border-bd text-tx3'}`}>🔢</button>
+          </label>
           <input type="number" value={editAmount} onChange={e=>setEditAmount(e.target.value)}
-            className="w-full bg-c2 border-2 border-bd rounded-2xl px-3 py-3 text-sm font-bold text-tx focus:border-pri outline-none" inputMode="decimal"/>
+            className="w-full bg-c2 border-2 border-bd rounded-2xl px-3 py-3 text-base font-bold text-tx focus:border-pri outline-none" inputMode="decimal"/>
         </div>
       </div>
-      {editShowCalc&&<div className="mb-4"><MiniCalc value={parseFloat(editAmount)||0} onChange={v=>setEditAmount(String(v))} onClose={()=>setEditShowCalc(false)}/></div>}
-      <button onClick={()=>setEditShowCalc(s=>!s)} className={`mb-4 text-xs font-bold px-3 py-1.5 rounded-xl border ${editShowCalc?'border-pri text-pri bg-pri/10':'border-bd text-tx2'}`}>🔢 計算機</button>
-      <div className="mb-5">
+      {editShowCalc&&<div className="mb-3"><MiniCalc value={parseFloat(editAmount)||0} onChange={v=>{setEditAmount(String(v));setEditShowCalc(false);}} onClose={()=>setEditShowCalc(false)}/></div>}
+
+      {/* Description */}
+      <div className="mb-3">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">帳目名稱</label>
         <input type="text" value={editDesc} onChange={e=>setEditDesc(e.target.value)}
           className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"
           placeholder="帳目名稱"/>
       </div>
-      <div className="mb-5">
+
+      {/* Category */}
+      <div className="mb-3">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分類</label>
         <div className="scroll-x">
           {getCats().map(cat=><button key={cat} onClick={()=>setEditCat(cat)}
@@ -787,7 +821,49 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
           </button>)}
         </div>
       </div>
-      <div className="mb-5">
+
+      {/* Split method */}
+      <div className="mb-3">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分攤方式</label>
+        <div className="flex bg-c2 rounded-2xl p-1 gap-1 mb-3">
+          {[['equal','⚖️ 平均'],['custom','✏️ 自訂']].map(([v,l])=>
+            <button key={v} onClick={()=>setEditSplit(v)}
+              className={`flex-1 py-2 rounded-xl text-sm font-bold ${editSplit===v?'bg-pri text-bg':'text-tx2'}`}>{l}</button>)}
+        </div>
+        {editSplit==='equal'
+          ?<div className="flex flex-wrap gap-2">
+            {data.members.map(m=>{const n=mname(m);const on=editSel.includes(n);
+              return<button key={n} onClick={()=>setEditSel(s=>s.includes(n)?s.filter(x=>x!==n):[...s,n])}
+                className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-2xl border-2 min-w-[60px] ${on?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+                <span className="text-xl">{mav(m)}</span><span className="text-xs font-semibold">{n}</span>
+              </button>;})}
+          </div>
+          :<div className="bg-c2 rounded-2xl overflow-hidden border border-bd">
+            {data.members.map((m,i)=>{const n=mname(m);
+              return<div key={n} className="flex items-center gap-3 px-4 py-3 border-b border-bd last:border-0">
+                <span className="text-xl">{mav(m)}</span>
+                <span className="flex-1 font-semibold text-sm">{n}</span>
+                <div className="relative w-28">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-tx3 text-xs pointer-events-none">NT$</span>
+                  <input type="number" value={editCustom[n]||''} onChange={e=>setEditCustom(p=>({...p,[n]:e.target.value}))}
+                    className="w-full bg-c3 border border-bd rounded-xl pl-9 pr-2 py-2 text-sm font-bold text-right text-tx outline-none focus:border-pri"
+                    placeholder="0" inputMode="decimal"/>
+                </div>
+              </div>;})}
+            {(()=>{
+              const total=parseFloat(editAmount)||0;
+              const sum=Object.values(editCustom).reduce((a,b)=>a+(parseFloat(b)||0),0);
+              const diff=Math.round((total-sum)*100)/100;
+              if(!total)return null;
+              return<div className={`px-4 py-2 text-center text-xs font-semibold ${Math.abs(diff)<0.5?'text-grn bg-grn/10':'text-red bg-red/10'}`}>
+                {Math.abs(diff)<0.5?`✅ ${fmt(sum)} 相符`:diff>0?`⚠ 還差 ${fmt(diff)}`:`⚠ 超出 ${fmt(-diff)}`}
+              </div>;
+            })()}
+          </div>}
+      </div>
+
+      {/* Note */}
+      <div className="mb-4">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">備註</label>
         <input type="text" value={editNote} onChange={e=>setEditNote(e.target.value)}
           className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"
