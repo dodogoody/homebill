@@ -408,6 +408,48 @@ function CustomCatManager({onClose,onUpdate}){
   );
 }
 
+
+// ══ Mini Calculator ══
+function MiniCalc({value,onChange,onClose}){
+  const[expr,setExpr]=useState(String(value||''));
+  const[display,setDisplay]=useState(String(value||'0'));
+  const press=btn=>{
+    if(btn==='='){
+      try{
+        const r=Function('"use strict";return('+expr.replace(/×/g,'*').replace(/÷/g,'/')+')')();
+        const rounded=Math.round(r*100)/100;
+        setDisplay(String(rounded));setExpr(String(rounded));
+      }catch(e){setDisplay('錯誤');setExpr('');}
+    }else if(btn==='C'){setExpr('');setDisplay('0');}
+    else if(btn==='⌫'){
+      const e=expr.slice(0,-1)||'0';setExpr(e);setDisplay(e);
+    }else if(btn==='✓'){
+      const n=parseFloat(display);if(!isNaN(n)){onChange(n);}onClose();
+    }else{
+      const e=expr==='0'||expr==='錯誤'?btn:expr+btn;
+      setExpr(e);setDisplay(e);
+    }
+  };
+  const rows=[['7','8','9','÷'],['4','5','6','×'],['1','2','3','−'],['C','0','.','＋'],['⌫','=','✓','']];
+  return(
+    <div className="bg-c1 rounded-2xl border border-bd overflow-hidden">
+      <div className="px-4 py-3 bg-c2 text-right">
+        <p className="text-2xl font-black text-tx truncate">{display}</p>
+      </div>
+      <div className="p-2 grid gap-1.5" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+        {rows.flat().map((b,i)=>b?
+          <button key={i} onClick={()=>press(b)}
+            className={`py-3.5 rounded-xl text-base font-bold active:scale-90 transition-transform
+              ${b==='✓'?'bg-pri text-bg col-span-2':b==='='?'bg-pri/20 text-pri':b==='C'?'bg-red/20 text-red':'bg-c2 text-tx'}`}
+            style={b==='✓'?{gridColumn:'span 2'}:{}}>
+            {b}
+          </button>:<div key={i}/>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ══ ADD EXPENSE ══
 function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
   const[showCatMgr,setShowCatMgr]=useState(false);
@@ -421,6 +463,7 @@ function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
   const[sel,setSel]=useState(members.map(mname));
   const[custom,setCustom]=useState({});
   const[note,setNote]=useState('');
+  const[showCalc,setShowCalc]=useState(false);
   const[loading,setLoading]=useState(false);
   const amtRef=useRef();
   useEffect(()=>{setTimeout(()=>amtRef.current?.focus(),350);},[]);
@@ -520,22 +563,29 @@ function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
         </div>
       </div>}
 
-      {/* Amount */}
-      <div className="mb-5">
-        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">金額</label>
+      {/* Amount + Calculator */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider">金額</label>
+          <button onClick={()=>setShowCalc(s=>!s)} className={`text-xs font-bold px-3 py-1 rounded-xl border ${showCalc?'border-pri text-pri bg-pri/10':'border-bd text-tx2'}`}>🔢 計算機</button>
+        </div>
         <div className="relative">
           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-tx3 text-sm font-semibold pointer-events-none" style={{opacity:amt?0:1}}>NT$</span>
           <input ref={amtRef} type="number" value={amt} onChange={e=>setAmt(e.target.value)}
             className="w-full bg-c2 border-2 border-bd rounded-2xl pl-12 pr-4 text-4xl font-black text-tx focus:border-pri outline-none"
-            placeholder="0" inputMode="decimal" style={{minHeight:'76px'}}/>
+            placeholder="0" inputMode="decimal" style={{minHeight:'72px'}}/>
         </div>
+        {showCalc&&<div className="mt-2"><MiniCalc value={parseFloat(amt)||0} onChange={v=>{setAmt(String(v));}} onClose={()=>setShowCalc(false)}/></div>}
       </div>
-      {/* Desc */}
-      <div className="mb-5">
+      {/* Desc + Note */}
+      <div className="mb-4">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">描述</label>
         <input type="text" value={desc} onChange={e=>setDesc(e.target.value)}
-          className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none"
+          className="w-full bg-c2 border-2 border-bd rounded-2xl px-4 py-3.5 text-base text-tx focus:border-pri outline-none mb-2"
           placeholder="例：晚餐、計程車…"/>
+        <input type="text" value={note} onChange={e=>setNote(e.target.value)}
+          className="w-full bg-c2 border border-bd rounded-2xl px-4 py-3 text-sm text-tx focus:border-pri/60 outline-none"
+          placeholder="備註（選填）"/>
       </div>
       {/* Date + Payer */}
       <div className="grid grid-cols-2 gap-3 mb-5">
@@ -620,6 +670,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
   const[editDesc,setEditDesc]=useState('');
   const[editDate,setEditDate]=useState('');
   const[editAmount,setEditAmount]=useState('');
+  const[editShowCalc,setEditShowCalc]=useState(false);
   const[editCat,setEditCat]=useState('');
   const saveExpEdit=async()=>{
     if(!editingExp)return;
@@ -707,7 +758,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
 
     {/* Edit expense sheet */}
     {editingExp&&<Sheet title="編輯帳目" onClose={()=>setEditingExp(null)}>
-      <div className="grid grid-cols-2 gap-3 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         <div>
           <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">日期</label>
           <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)}
@@ -719,6 +770,8 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
             className="w-full bg-c2 border-2 border-bd rounded-2xl px-3 py-3 text-sm font-bold text-tx focus:border-pri outline-none" inputMode="decimal"/>
         </div>
       </div>
+      {editShowCalc&&<div className="mb-4"><MiniCalc value={parseFloat(editAmount)||0} onChange={v=>setEditAmount(String(v))} onClose={()=>setEditShowCalc(false)}/></div>}
+      <button onClick={()=>setEditShowCalc(s=>!s)} className={`mb-4 text-xs font-bold px-3 py-1.5 rounded-xl border ${editShowCalc?'border-pri text-pri bg-pri/10':'border-bd text-tx2'}`}>🔢 計算機</button>
       <div className="mb-5">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">帳目名稱</label>
         <input type="text" value={editDesc} onChange={e=>setEditDesc(e.target.value)}
@@ -1725,12 +1778,31 @@ function App(){
   },[load,screen]);
 
   const handleAdd=async expData=>{
-    await gasCall('add',{data:expData,ledgerId});
-    await load();};
+    // Optimistic: add to local state immediately
+    const tmp={...expData,id:'tmp_'+Date.now(),participants:expData.participants};
+    setData(d=>({
+      ...d,
+      expenses:[tmp,...(d.expenses||[])],
+      activeExpenses:[tmp,...(d.activeExpenses||d.expenses||[])],
+      settlement:calcSettle([tmp,...(d.activeExpenses||d.expenses||[])],d.members||[])
+    }));
+    // Background sync
+    fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'add',data:expData,ledgerId}),mode:'no-cors'});
+    setTimeout(()=>load(),2000); // refresh to get real ID
+  };
   const handleDelete=async id=>{
-    if(id==='__refresh__'){await load();return;} // refresh signal from edit
-    try{await gasCall('delete',{id,ledgerId});await load();showToast('已刪除');}
-    catch(e){showToast('刪除失敗','err');}};
+    if(id==='__refresh__'){load();return;}
+    // Optimistic delete
+    setData(d=>({
+      ...d,
+      expenses:(d.expenses||[]).filter(e=>e.id!==id),
+      activeExpenses:(d.activeExpenses||d.expenses||[]).filter(e=>e.id!==id),
+      settlement:calcSettle((d.activeExpenses||d.expenses||[]).filter(e=>e.id!==id),d.members||[])
+    }));
+    showToast('已刪除');
+    fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'delete',id,ledgerId}),mode:'no-cors'});
+    setTimeout(()=>load(),2000);
+  };
 
   if(screen==='list')return<>
     <LedgerPage onEnter={enterLedger} toast={showToast}/>
