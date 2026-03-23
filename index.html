@@ -737,86 +737,38 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
   };
 
   const ExpRow=({e,settled=false})=>{
-    const[swipeX,setSwipeX]=useState(0);
-    const startX=useRef(0);
-    const startY=useRef(0);
-    const isH=useRef(false);
-    const onTS=ev=>{
-      startX.current=ev.touches[0].clientX;
-      startY.current=ev.touches[0].clientY;
-      isH.current=false;
-    };
-    const onTM=ev=>{
-      const dx=ev.touches[0].clientX-startX.current;
-      const dy=ev.touches[0].clientY-startY.current;
-      if(!isH.current&&Math.abs(dx)>Math.abs(dy)*1.5) isH.current=true;
-      if(isH.current&&dx<0) setSwipeX(Math.max(dx,-72));
-    };
-    const onTE=()=>{
-      if(swipeX<-36) setSwipeX(-72); else setSwipeX(0);
+    const openEdit=()=>{if(settled)return;
+      setEditCat(e.category||'其他');setEditNote(e.note||'');setEditDesc(e.description||'');
+      setEditDate(e.date||'');setEditAmount(String(e.amount||''));
+      const ps=e.participants;
+      if(Array.isArray(ps)){setEditSplit('equal');setEditSel(ps);setEditCustom({});}
+      else if(ps&&typeof ps==='object'){setEditSplit('custom');setEditCustom(ps);setEditSel(Object.keys(ps));}
+      else{setEditSplit('equal');setEditSel(data.members.map(mname));setEditCustom({});}
+      setEditAdjust({});setEditAdjSel(data.members.map(mname));setEditShowCalc(false);setEditingExp(e);
     };
     return(
-    <div className={`relative overflow-hidden border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
-      {!settled&&<div style={{position:'absolute',right:0,top:0,bottom:0,width:'72px',background:'#e53935',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer'}}
-        onClick={e=>{e.stopPropagation();if(confirm('確定刪除？')){onDelete(e.id);}}}>
-        <span style={{fontSize:'20px'}}>🗑</span>
-        <span style={{color:'#fff',fontWeight:700,fontSize:'12px',marginTop:'2px'}}>刪除</span>
-      </div>}
-      <div style={{transform:`translateX(${swipeX}px)`,transition:swipeX===0||swipeX===-72?'transform .2s ease':'none',background:'var(--c1)',display:'flex',gap:'12px',padding:'14px 16px',alignItems:'flex-start'}}
-        onTouchStart={!settled?onTS:undefined}
-        onTouchMove={!settled?onTM:undefined}
-        onTouchEnd={!settled?onTE:undefined}
-        onClick={swipeX<-10?()=>setSwipeX(0):undefined}>
-      <div onClick={()=>{if(!settled){
-  setEditCat(e.category||'其他');
-  setEditNote(e.note||'');
-  setEditDesc(e.description||'');
-  setEditDate(e.date||'');
-  setEditAmount(String(e.amount||''));
-  const ps=e.participants;
-  if(Array.isArray(ps)){setEditSplit('equal');setEditSel(ps);setEditCustom({});}
-  else if(ps&&typeof ps==='object'){setEditSplit('custom');setEditCustom(ps);setEditSel(Object.keys(ps));}
-  else{setEditSplit('equal');setEditSel(data.members.map(mname));setEditCustom({});}
-  setEditAdjust({});setEditAdjSel(data.members.map(mname));
-  setEditShowCalc(false);
-  setEditingExp(e);
-}}}
-        className={`w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0 relative cursor-pointer ${settled?'':'active:scale-90 transition-transform'}`}>
+    <div className={`flex gap-3 px-4 py-3.5 border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
+      {/* Category icon — tap to open edit */}
+      <div onClick={openEdit}
+        className={`w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0 relative ${settled?'':'cursor-pointer active:scale-90 transition-transform'}`}>
         {(getCico())[e.category]||'📌'}
         {!settled&&<span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-pri border border-bg flex items-center justify-center text-bg font-black" style={{fontSize:'9px'}}>✏</span>}
       </div>
-      <div className={`flex-1 min-w-0 ${!settled?'cursor-pointer':''}`}
-        onClick={()=>{if(!settled){
-  setEditCat(e.category||'其他');
-  setEditNote(e.note||'');
-  setEditDesc(e.description||'');
-  setEditDate(e.date||'');
-  setEditAmount(String(e.amount||''));
-  const ps=e.participants;
-  if(Array.isArray(ps)){setEditSplit('equal');setEditSel(ps);setEditCustom({});}
-  else if(ps&&typeof ps==='object'){setEditSplit('custom');setEditCustom(ps);setEditSel(Object.keys(ps));}
-  else{setEditSplit('equal');setEditSel(data.members.map(mname));setEditCustom({});}
-  setEditAdjust({});setEditAdjSel(data.members.map(mname));
-  setEditShowCalc(false);
-  setEditingExp(e);
-}}}>
-        <div className="flex items-start gap-2">
+      {/* Description + meta */}
+      <div className={`flex-1 min-w-0 ${!settled?'cursor-pointer':''}`} onClick={openEdit}>
+        <div className="flex items-start gap-1">
           <p className="font-semibold text-base leading-tight flex-1 truncate">{e.description}</p>
           {settled&&<span className="text-[10px] font-bold text-tx3 bg-bd px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5">已結算</span>}
-          {!settled&&<span className="text-[10px] text-tx3 flex-shrink-0 mt-0.5">點擊編輯</span>}
         </div>
         <p className="text-xs text-tx2 mt-0.5">{e.date?.slice(5)} · {e.payer} 付 · {slb(e.participants)}</p>
-        {e.note&&<p className="text-xs text-pri/80 mt-1 flex items-center gap-1">
-          <span className="opacity-60">📝</span>{e.note}
-        </p>}
+        {e.note&&<p className="text-xs mt-0.5" style={{color:'var(--pri)',opacity:.7}}>📝 {e.note}</p>}
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      {/* Amount + tiny trash */}
+      <div className="flex-shrink-0 text-right">
         <p className="font-black text-base">{fmt(e.amount)}</p>
         {!settled&&<button
           onClick={ev=>{ev.stopPropagation();if(confirm('確定刪除？'))onDelete(e.id);}}
-          className="opacity-30 active:opacity-80 transition-opacity"
-          style={{fontSize:'11px',padding:'4px',lineHeight:1}}>🗑</button>}
-      </div>
+          style={{fontSize:'10px',opacity:.25,padding:'2px',marginTop:'2px',display:'block',marginLeft:'auto'}}>🗑</button>}
       </div>
     </div>
     );
