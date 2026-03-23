@@ -702,20 +702,24 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
       const obj={};Object.entries(editCustom).forEach(([k,v])=>{if(parseFloat(v)>0)obj[k]=parseFloat(v);});
       parts=Object.keys(obj).length?obj:editingExp.participants;
     }else if(editSplit==='adjust'){
-      const total=parseFloat(editAmount)||editingExp.amount;
+      // Logic: each person pays their own items + equal share of remainder
+      // e.g. Total 6532, Ember=329 own, Oliver=469 own
+      // Shared = 6532-329-469 = 5734, each gets 5734/2 = 2867
+      // Ember total = 329+2867 = 3196, Oliver = 469+2867 = 3336
+      const grandTotal=parseFloat(editAmount)||editingExp.amount;
       const deductions=editAdjust||{};
       const totalDeducted=Object.values(deductions).reduce((a,b)=>a+(parseFloat(b)||0),0);
       const splitPeople=editAdjSel.length?editAdjSel:members.map(mname);
-      const perPerson=splitPeople.length>0?Math.round((total-totalDeducted)/splitPeople.length*100)/100:0;
+      const sharedAmount=grandTotal-totalDeducted;
+      const perPerson=splitPeople.length>0?Math.round(sharedAmount/splitPeople.length*100)/100:0;
       const obj={};
       members.forEach(m=>{
         const n=mname(m);
-        const ded=parseFloat(deductions[n])||0;
-        const share=splitPeople.includes(n)?perPerson:0;
-        const total_share=Math.round((ded+share)*100)/100;
-        if(total_share>0) obj[n]=total_share;
+        const ownItems=parseFloat(deductions[n])||0;
+        const sharedShare=splitPeople.includes(n)?perPerson:0;
+        const personTotal=Math.round((ownItems+sharedShare)*100)/100;
+        if(personTotal>0) obj[n]=personTotal;
       });
-      // fallback if obj is empty
       parts=Object.keys(obj).length>0?obj:members.map(mname);
     }
     fetch(GAS_URL,{method:'POST',
@@ -806,8 +810,12 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
           <span className="opacity-60">📝</span>{e.note}
         </p>}
       </div>
-      <div style={{flexShrink:0,textAlign:'right'}}>
+      <div className="flex items-center gap-2 flex-shrink-0">
         <p className="font-black text-base">{fmt(e.amount)}</p>
+        {!settled&&<button
+          onClick={ev=>{ev.stopPropagation();if(confirm('確定刪除？'))onDelete(e.id);}}
+          className="opacity-30 active:opacity-80 transition-opacity"
+          style={{fontSize:'11px',padding:'4px',lineHeight:1}}>🗑</button>}
       </div>
       </div>
     </div>
@@ -938,7 +946,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
                 </div>;})}
             </div>
             <div className={`px-3 py-2 rounded-xl text-xs font-semibold text-center ${remaining>=0?'bg-grn/10 text-grn':'bg-red/10 text-red'}`}>
-              個別合計 {fmt(totalDed)} → 剩餘 {fmt(Math.max(0,remaining))} 由 {cnt} 人分攤 = 每人 {fmt(perPerson)}
+              個別合計 {fmt(totalDed)} → 共享 {fmt(Math.max(0,remaining))} ÷ {cnt} 人 = 每人再付 {fmt(perPerson)}
             </div>
           </div>;
         })()}
