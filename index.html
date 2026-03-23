@@ -105,8 +105,21 @@ async function gasCall(action,payload={}){
 }
 
 // ══ CONSTANTS ══
-const CATS=['餐飲','交通','住宿','娛樂','購物','其他'];
-const CICO={'餐飲':'🍜','交通':'🚗','住宿':'🏠','娛樂':'🎉','購物':'🛍️','其他':'📌'};
+// Dynamic category system with localStorage persistence
+const DEFAULT_CATS=[{n:'餐飲',i:'🍜'},{n:'交通',i:'🚗'},{n:'住宿',i:'🏠'},{n:'娛樂',i:'🎉'},{n:'購物',i:'🛍️'},{n:'其他',i:'📌'}];
+function loadCatList(){try{const v=localStorage.getItem('cats_v2');return v?JSON.parse(v):DEFAULT_CATS.slice();}catch(e){return DEFAULT_CATS.slice();}}
+function saveCatList(arr){try{localStorage.setItem('cats_v2',JSON.stringify(arr));}catch(e){}}
+function buildCatGlobals(){
+  const cl=loadCatList();
+  window.CATS=cl.map(x=>x.n);
+  window.CICO={};cl.forEach(x=>{window.CICO[x.n]=x.i;});
+}
+buildCatGlobals();
+// Accessor so components always get latest
+const getCats=()=>window.CATS||['餐飲','交通','住宿','娛樂','購物','其他'];
+const getCico=()=>window.CICO||{'餐飲':'🍜','交通':'🚗','住宿':'🏠','娛樂':'🎉','購物':'🛍️','其他':'📌'};
+// Keep backward compat
+let CATS=getCats(), CICO=getCico();
 
 const ESET={
   '臉/人物':['😀','😎','🤓','🥳','🤠','👻','🤖','🦸','🧙','🥷','👰','🤵','👮','🧑','🕵️','🤴','👸'],
@@ -335,8 +348,70 @@ function HomePage({data,onGoPage,ledgerName,onBack}){
   </div>;
 }
 
+
+// ══ Custom Category Manager ══
+const EMOJI_GRID=['🍜','🚗','🏠','🎉','🛍️','📌','☕','🍺','🎬','🏋️','✈️','🏥','📚','💊','🎮',
+  '🛒','💡','🔧','👗','🐾','🌿','💰','🎁','🍕','🥗','🚌','🚂','⛽','🏨','🎵',
+  '📱','💻','🖨️','🔑','🏊','⚽','🎯','🧴','🧹','🪴'];
+function CustomCatManager({onClose,onUpdate}){
+  const[cats,setCats]=useState(loadCatList);
+  const[newName,setNewName]=useState('');
+  const[newIcon,setNewIcon]=useState('📌');
+  const[pickingFor,setPickingFor]=useState(null); // null | 'new' | index
+  const save=(arr)=>{saveCatList(arr);buildCatGlobals();CATS=getCats();CICO=getCico();onUpdate&&onUpdate();};
+  const addCat=()=>{
+    if(!newName.trim()){return;}
+    if(cats.some(c=>c.n===newName.trim())){alert('分類已存在');return;}
+    const updated=[...cats,{n:newName.trim(),i:newIcon}];
+    setCats(updated);save(updated);setNewName('');setNewIcon('📌');
+  };
+  const delCat=(i)=>{if(cats.length<=1)return;const u=cats.filter((_,j)=>j!==i);setCats(u);save(u);};
+  const editIcon=(i,icon)=>{const u=cats.map((c,j)=>j===i?{...c,i:icon}:c);setCats(u);save(u);};
+  const editName=(i,name)=>{if(!name.trim())return;const u=cats.map((c,j)=>j===i?{...c,n:name.trim()}:c);setCats(u);save(u);};
+  const reset=()=>{if(!confirm('重置為預設分類？'))return;setCats(DEFAULT_CATS.slice());save(DEFAULT_CATS.slice());};
+  if(pickingFor!==null) return(
+    <Sheet title="選擇圖示" onClose={()=>setPickingFor(null)}>
+      <div className="grid grid-cols-8 gap-2">
+        {EMOJI_GRID.map(em=><button key={em} onClick={()=>{
+          if(pickingFor==='new')setNewIcon(em);
+          else editIcon(pickingFor,em);
+          setPickingFor(null);
+        }} className="aspect-square rounded-xl bg-c2 text-2xl flex items-center justify-center active:scale-90">{em}</button>)}
+      </div>
+    </Sheet>
+  );
+  return(
+    <Sheet title="自訂分類" onClose={onClose}>
+      <div className="mb-4">
+        {cats.map((cat,i)=>(
+          <div key={i} className="flex items-center gap-2 py-2.5 border-b border-bd last:border-0">
+            <button onClick={()=>setPickingFor(i)} className="text-2xl w-10 h-10 rounded-xl bg-c2 flex items-center justify-center flex-shrink-0 active:scale-90">{cat.i}</button>
+            <input value={cat.n} onChange={e=>editName(i,e.target.value)}
+              className="flex-1 bg-c2 border border-bd rounded-xl px-3 py-2 text-sm font-semibold text-tx outline-none focus:border-pri"/>
+            {cats.length>1&&<button onClick={()=>delCat(i)} className="text-tx3 text-lg px-2">✕</button>}
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-bd pt-4 mb-4">
+        <p className="text-xs font-bold text-tx3 uppercase tracking-wider mb-3">新增分類</p>
+        <div className="flex gap-2 mb-3">
+          <button onClick={()=>setPickingFor('new')} className="text-2xl w-12 h-12 rounded-xl bg-c2 border-2 border-bd flex items-center justify-center flex-shrink-0 active:scale-90">{newIcon}</button>
+          <input value={newName} onChange={e=>setNewName(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&addCat()}
+            className="flex-1 bg-c2 border-2 border-bd rounded-2xl px-4 py-3 text-base text-tx outline-none focus:border-pri"
+            placeholder="分類名稱" maxLength={10}/>
+        </div>
+        <Btn onClick={addCat} disabled={!newName.trim()}>新增分類</Btn>
+      </div>
+      <button onClick={reset} className="w-full py-2 text-xs text-tx3 font-bold">重置為預設分類</button>
+    </Sheet>
+  );
+}
+
 // ══ ADD EXPENSE ══
 function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
+  const[showCatMgr,setShowCatMgr]=useState(false);
+  const[catVer,setCatVer]=useState(0); // increment to force re-render
   const[amt,setAmt]=useState('');
   const[desc,setDesc]=useState('');
   const[date,setDate]=useState(today());
@@ -474,13 +549,17 @@ function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
       </div>
       {/* Category */}
       <div className="mb-5">
-        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分類</label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider">分類</label>
+          <button onClick={()=>setShowCatMgr(true)} className="text-xs text-pri font-bold">⚙ 自訂分類</button>
+        </div>
         <div className="scroll-x">
-          {CATS.map(c=><button key={c} onClick={()=>setCat(c)}
-            className={`flex-shrink-0 px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 transition-all ${cat===c?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
-            {CICO[c]} {c}</button>)}
+          {getCats().map(cc=><button key={cc} onClick={()=>setCat(cc)}
+            className={`flex-shrink-0 px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 transition-all ${cat===cc?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+            {getCico()[cc]} {cc}</button>)}
         </div>
       </div>
+      {showCatMgr&&<CustomCatManager onClose={()=>setShowCatMgr(false)} onUpdate={()=>setCatVer(v=>v+1)}/>}
       {/* Split */}
       <div className="mb-5">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分攤方式</label>
@@ -539,6 +618,8 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
   const[editingExp,setEditingExp]=useState(null); // expense being edited
   const[editNote,setEditNote]=useState('');
   const[editDesc,setEditDesc]=useState('');
+  const[editDate,setEditDate]=useState('');
+  const[editAmount,setEditAmount]=useState('');
   const[editCat,setEditCat]=useState('');
   const saveExpEdit=async()=>{
     if(!editingExp)return;
@@ -546,7 +627,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
       // Send to GAS (no-cors, fire and forget)
       const lid=ledgerId||'default';
       fetch(GAS_URL,{method:'POST',
-        body:JSON.stringify({action:'updateExpense',id:editingExp.id,description:editDesc,note:editNote,category:editCat,ledgerId:lid}),
+        body:JSON.stringify({action:'updateExpense',id:editingExp.id,description:editDesc,note:editNote,category:editCat,date:editDate,amount:parseFloat(editAmount)||editingExp.amount,ledgerId:lid}),
         mode:'no-cors'});
       setEditingExp(null);
       toast('✅ 已更新','ok');
@@ -558,15 +639,17 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
 
   const ExpRow=({e,settled=false})=>(
     <div className={`flex gap-3 px-4 py-3.5 border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
-      <button onClick={()=>{if(!settled){setEditCat(e.category||'其他');setEditNote(e.note||'');setEditDesc(e.description||'');setEditingExp(e);}}}
-        className={`w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0 ${settled?'':'active:scale-90 transition-transform'}`}>
-        {CICO[e.category]||'📌'}
-        {!settled&&<span style={{position:'absolute',fontSize:'8px',bottom:'1px',right:'1px',opacity:.7}}>✏</span>}
-      </button>
-      <div className="flex-1 min-w-0">
+      <div onClick={()=>{if(!settled){setEditCat(e.category||'其他');setEditNote(e.note||'');setEditDesc(e.description||'');setEditDate(e.date||'');setEditAmount(String(e.amount||''));setEditingExp(e);}}}
+        className={`w-11 h-11 rounded-2xl bg-c2 flex items-center justify-center text-xl flex-shrink-0 relative cursor-pointer ${settled?'':'active:scale-90 transition-transform'}`}>
+        {(getCico())[e.category]||'📌'}
+        {!settled&&<span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-pri border border-bg flex items-center justify-center text-bg font-black" style={{fontSize:'9px'}}>✏</span>}
+      </div>
+      <div className={`flex-1 min-w-0 ${!settled?'cursor-pointer':''}`}
+        onClick={()=>{if(!settled){setEditCat(e.category||'其他');setEditNote(e.note||'');setEditDesc(e.description||'');setEditDate(e.date||'');setEditAmount(String(e.amount||''));setEditingExp(e);}}}>
         <div className="flex items-start gap-2">
           <p className="font-semibold text-base leading-tight flex-1 truncate">{e.description}</p>
           {settled&&<span className="text-[10px] font-bold text-tx3 bg-bd px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5">已結算</span>}
+          {!settled&&<span className="text-[10px] text-tx3 flex-shrink-0 mt-0.5">點擊編輯</span>}
         </div>
         <p className="text-xs text-tx2 mt-0.5">{e.date?.slice(5)} · {e.payer} 付 · {slb(e.participants)}</p>
         {e.note&&<p className="text-xs text-pri/80 mt-1 flex items-center gap-1">
@@ -624,6 +707,18 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
 
     {/* Edit expense sheet */}
     {editingExp&&<Sheet title="編輯帳目" onClose={()=>setEditingExp(null)}>
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div>
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">日期</label>
+          <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)}
+            className="w-full bg-c2 border-2 border-bd rounded-2xl px-3 py-3 text-sm text-tx focus:border-pri outline-none"/>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">金額</label>
+          <input type="number" value={editAmount} onChange={e=>setEditAmount(e.target.value)}
+            className="w-full bg-c2 border-2 border-bd rounded-2xl px-3 py-3 text-sm font-bold text-tx focus:border-pri outline-none" inputMode="decimal"/>
+        </div>
+      </div>
       <div className="mb-5">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">帳目名稱</label>
         <input type="text" value={editDesc} onChange={e=>setEditDesc(e.target.value)}
@@ -633,9 +728,9 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
       <div className="mb-5">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">分類</label>
         <div className="scroll-x">
-          {CATS.map(cat=><button key={cat} onClick={()=>setEditCat(cat)}
+          {getCats().map(cat=><button key={cat} onClick={()=>setEditCat(cat)}
             className={`flex-shrink-0 px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 whitespace-nowrap ${editCat===cat?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
-            {CICO[cat]} {cat}
+            {getCico()[cat]} {cat}
           </button>)}
         </div>
       </div>
@@ -1260,6 +1355,90 @@ function AvatarPicker({name,current,onPick,onClose}){
   </Sheet>;
 }
 
+
+// ══ Admin clear button with PIN ══
+const ADMIN_PIN_KEY='admin_pin_hash';
+function simpleHash(s){let h=0;for(let i=0;i<s.length;i++){h=(Math.imul(31,h)+s.charCodeAt(i))|0;}return String(h);}
+
+function AdminClearBtn({ledgerId,onRefresh,toast}){
+  const[step,setStep]=useState(0); // 0=button 1=set-pin 2=enter-pin 3=confirm
+  const[pin,setPin]=useState('');
+  const[input,setInput]=useState('');
+  const storedHash=()=>localStorage.getItem(ADMIN_PIN_KEY);
+
+  const handlePress=()=>{
+    if(!storedHash()){setStep(1);setPin('');}// first time: set PIN
+    else{setStep(2);setInput('');}// has PIN: verify
+  };
+
+  const setAdminPin=()=>{
+    if(pin.length<4){toast('PIN 至少 4 位','err');return;}
+    localStorage.setItem(ADMIN_PIN_KEY,simpleHash(pin));
+    setStep(3);setInput('');
+  };
+
+  const verifyPin=()=>{
+    if(simpleHash(input)===storedHash()){setStep(3);}
+    else{toast('PIN 錯誤','err');setInput('');}
+  };
+
+  const doClear=async()=>{
+    if(!confirm('⚠️ 確定永久刪除所有帳目？此操作無法復原！'))return;
+    try{
+      fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'clearExpenses',ledgerId}),mode:'no-cors'});
+      await new Promise(r=>setTimeout(r,1500));
+      await onRefresh();
+      toast('✅ 已清除所有帳目','ok');setStep(0);
+    }catch(e){toast('清除失敗','err');}
+  };
+
+  if(step===0) return(
+    <button onClick={handlePress}
+      className="w-full py-3 rounded-2xl border-2 border-red/40 text-red text-sm font-bold bg-red/5 active:opacity-70">
+      🗑 清除所有帳目（需管理者 PIN）
+    </button>
+  );
+
+  if(step===1) return(
+    <div className="bg-red/5 border border-red/30 rounded-2xl p-4">
+      <p className="text-sm font-bold text-red mb-1">設定管理者 PIN</p>
+      <p className="text-xs text-tx3 mb-3">首次使用需設定 PIN，之後每次清除都需要輸入。</p>
+      <input type="password" value={pin} onChange={e=>setPin(e.target.value)} inputMode="numeric"
+        className="w-full bg-c2 border border-bd rounded-xl px-4 py-3 text-base text-tx outline-none focus:border-red mb-3"
+        placeholder="輸入 4-8 位 PIN" maxLength={8}/>
+      <div className="flex gap-2">
+        <button onClick={()=>setStep(0)} className="flex-1 py-2.5 rounded-xl bg-c2 border border-bd text-sm font-bold text-tx2">取消</button>
+        <button onClick={setAdminPin} className="flex-1 py-2.5 rounded-xl bg-red text-white text-sm font-bold">設定 PIN</button>
+      </div>
+    </div>
+  );
+
+  if(step===2) return(
+    <div className="bg-red/5 border border-red/30 rounded-2xl p-4">
+      <p className="text-sm font-bold text-red mb-3">請輸入管理者 PIN</p>
+      <input type="password" value={input} onChange={e=>setInput(e.target.value)} inputMode="numeric"
+        onKeyDown={e=>e.key==='Enter'&&verifyPin()}
+        className="w-full bg-c2 border border-bd rounded-xl px-4 py-3 text-base text-tx outline-none focus:border-red mb-3"
+        placeholder="PIN" maxLength={8} autoFocus/>
+      <div className="flex gap-2">
+        <button onClick={()=>setStep(0)} className="flex-1 py-2.5 rounded-xl bg-c2 border border-bd text-sm font-bold text-tx2">取消</button>
+        <button onClick={verifyPin} className="flex-1 py-2.5 rounded-xl bg-red text-white text-sm font-bold">確認</button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div className="bg-red/10 border-2 border-red/50 rounded-2xl p-4">
+      <p className="text-sm font-black text-red mb-1">⚠️ 危險操作</p>
+      <p className="text-xs text-tx2 mb-4">這將永久刪除此帳本的所有帳目，無法復原。成員資料不受影響。</p>
+      <div className="flex gap-2">
+        <button onClick={()=>setStep(0)} className="flex-1 py-2.5 rounded-xl bg-c2 border border-bd text-sm font-bold text-tx2">取消</button>
+        <button onClick={doClear} className="flex-1 py-2.5 rounded-xl bg-red text-white text-sm font-bold">確認清除</button>
+      </div>
+    </div>
+  );
+}
+
 // ══ MEMBERS PAGE ══
 function MembersPage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
   const{members=[]}=data;
@@ -1358,20 +1537,7 @@ function MembersPage({data,ledgerId,onRefresh,toast,ledgerName,onBack}){
     <Card>
       <div className="px-4 py-4">
         <p className="text-sm text-tx2 mb-3">清除此帳本所有帳目（成員保留），適合正式啟用前清除測試資料。</p>
-        <button onClick={async()=>{
-          const code=prompt('請輸入「確認清除」以確認操作：');
-          if(code!=='確認清除'){toast('已取消','');return;}
-          const again=confirm('⚠️ 這將永久刪除所有帳目，無法復原。確定繼續？');
-          if(!again)return;
-          try{
-            fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'clearExpenses',ledgerId}),mode:'no-cors'});
-            await new Promise(r=>setTimeout(r,1500));
-            await onRefresh();
-            toast('✅ 已清除所有帳目','ok');
-          }catch(e){toast('清除失敗','err');}
-        }} className="w-full py-3 rounded-2xl border-2 border-red/40 text-red text-sm font-bold bg-red/5 active:opacity-70">
-          🗑 清除所有帳目（測試資料）
-        </button>
+        <AdminClearBtn ledgerId={ledgerId} onRefresh={onRefresh} toast={toast}/>
       </div>
     </Card>
     {editAvatar&&<AvatarPicker
