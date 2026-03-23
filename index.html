@@ -873,8 +873,10 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
       const r=toImport[i];
       setImportProgress(Math.round((i+1)/toImport.length*100));
       const dt=normDate(String(r[colMap.date>=0?colMap.date:0]||'').trim());
-      const desc=String(r[colMap.desc>=0?colMap.desc:1]||'').trim();
-      const amt=Math.abs(parseFloat(String(r[colMap.amount>=0?colMap.amount:2]||'').replace(/,/g,'').replace(/[^0-9.]/g,''))||0);
+      // Use edited values if present, otherwise fall back to original
+      const desc=(r._editDesc!==undefined?r._editDesc:String(r[colMap.desc>=0?colMap.desc:1]||'')).trim();
+      const rawAmt=r._editAmt!==undefined?r._editAmt:parseFloat(String(r[colMap.amount>=0?colMap.amount:2]||'').replace(/,/g,'').replace(/[^0-9.]/g,''))||0;
+      const amt=Math.abs(rawAmt);
       if(!amt||!desc){fail++;continue;}
       // Final dedup check before writing
       const key=`${dt}|${desc}|${Math.round(amt)}`;
@@ -1065,20 +1067,54 @@ function ImportSheet({members,ledgerId,onDone,onClose,toast,existingExpenses=[]}
             {rows.map((r,i)=>{
               const isDup=r._dup;
               const checked=r._chk!==false;
-              return<div key={i}
-                className={`flex items-center gap-3 px-3 py-3 border-b border-bd last:border-0 transition-opacity ${isDup?'opacity-40':''}`}
-                onClick={()=>{if(!isDup)setRows(rs=>rs.map((x,j)=>j===i?{...x,_chk:!x._chk}:x));}}>
-                {/* Big tap-friendly checkbox */}
-                <div className={`w-6 h-6 rounded-lg border-2 flex-shrink-0 flex items-center justify-center transition-all cursor-pointer
-                  ${checked&&!isDup?'bg-pri border-pri':'border-bd bg-c3'}`}>
-                  {checked&&!isDup&&<span className="text-bg text-xs font-black">✓</span>}
-                  {isDup&&<span className="text-tx3 text-xs">—</span>}
+              return<div key={i} className={`border-b border-bd last:border-0 ${isDup?'opacity-40':''}`}>
+                {/* Row main line */}
+                <div className="flex items-center gap-3 px-3 py-2.5">
+                  {/* Checkbox */}
+                  <div onClick={()=>{if(!isDup)setRows(rs=>rs.map((x,j)=>j===i?{...x,_chk:!x._chk}:x));}}
+                    className={`w-6 h-6 rounded-lg border-2 flex-shrink-0 flex items-center justify-center cursor-pointer
+                    ${checked&&!isDup?'bg-pri border-pri':'border-bd bg-c3'}`}>
+                    {checked&&!isDup&&<span className="text-bg text-xs font-black">✓</span>}
+                    {isDup&&<span className="text-tx3 text-xs">—</span>}
+                  </div>
+                  {/* Category icon — tap to cycle */}
+                  <button onClick={()=>{if(!isDup){
+                    const cats=CATS;const cur=r._cat||'其他';
+                    const next=cats[(cats.indexOf(cur)+1)%cats.length];
+                    setRows(rs=>rs.map((x,j)=>j===i?{...x,_cat:next}:x));
+                  }}} className="text-xl flex-shrink-0 w-8 h-8 rounded-lg bg-c3 flex items-center justify-center active:scale-90 transition-transform"
+                    title="點擊切換分類">
+                    {CICO[r._cat||'其他']||'📌'}
+                  </button>
+                  {/* Description — tap to edit */}
+                  <div className="flex-1 min-w-0" onClick={e=>e.stopPropagation()}>
+                    <input type="text" value={r[1]||''} onChange={e=>{
+                      const newDesc=e.target.value;
+                      setRows(rs=>rs.map((x,j)=>{
+                        if(j!==i)return x;
+                        // Recheck duplicate with new description
+                        const key=`${x[0]}|${newDesc}|${Math.round(x[2])}`;
+                        const isDupNew=(existingExpenses||[]).some(e=>`${e.date}|${e.description}|${Math.round(parseFloat(e.amount))}`===key);
+                        return{...x,1:newDesc,_dup:isDupNew,_chk:!isDupNew};
+                      }));
+                    }} className={`w-full bg-transparent text-sm font-semibold outline-none border-b border-transparent focus:border-pri pb-0.5
+                      ${checked&&!isDup?'text-tx':'text-tx2'}`}
+                      onClick={e=>e.stopPropagation()}/>
+                    <p className="text-xs text-tx3 mt-0.5">{String(r[0]).slice(5)} · {r._cat||'其他'} {isDup?'· ⚠️ 重複':''}</p>
+                  </div>
+                  {/* Amount — tap to edit */}
+                  <input type="number" value={r[2]||''} onChange={e=>{
+                    const newAmt=parseFloat(e.target.value)||0;
+                    setRows(rs=>rs.map((x,j)=>{
+                      if(j!==i)return x;
+                      const key=`${x[0]}|${x[1]}|${Math.round(newAmt)}`;
+                      const isDupNew=(existingExpenses||[]).some(e=>`${e.date}|${e.description}|${Math.round(parseFloat(e.amount))}`===key);
+                      return{...x,2:newAmt,_dup:isDupNew,_chk:!isDupNew};
+                    }));
+                  }} className={`w-20 bg-transparent text-sm font-bold text-right outline-none border-b border-transparent focus:border-pri pb-0.5 flex-shrink-0
+                    ${checked&&!isDup?'text-tx':'text-tx2'}`}
+                    onClick={e=>e.stopPropagation()} inputMode="decimal"/>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold truncate ${checked&&!isDup?'text-tx':'text-tx2'}`}>{r[1]}</p>
-                  <p className="text-xs text-tx3 mt-0.5">{String(r[0]).slice(5)} {isDup?'· ⚠️ 已有重複':r._cat?'· '+r._cat:''}</p>
-                </div>
-                <span className={`text-sm font-bold flex-shrink-0 ${checked&&!isDup?'text-tx':'text-tx2'}`}>{fmt(r[2])}</span>
               </div>;
             })}
           </div>
