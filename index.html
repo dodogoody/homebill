@@ -484,21 +484,22 @@ function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
 
   // Smart quick tags: find recurring descriptions (appear 2+ times)
   const quickTags=useMemo(()=>{
+    // Group by description only (ignore amount - same item may vary in price)
     const freq={};
     expenses.forEach(e=>{
-      const k=e.description+'|'+e.category+'|'+e.amount;
-      if(!freq[k])freq[k]={desc:e.description,cat:e.category,amt:parseFloat(e.amount),count:0};
+      const k=e.description;
+      if(!freq[k])freq[k]={desc:e.description,cat:e.category,count:0,lastAmt:parseFloat(e.amount)};
       freq[k].count++;
+      freq[k].lastAmt=parseFloat(e.amount); // use latest amount
     });
-    // Also add manual saved tags from localStorage
     let saved=[];
     try{saved=JSON.parse(localStorage.getItem('quicktags')||'[]');}catch(e){}
-    const recurring=Object.values(freq).filter(x=>x.count>=2).sort((a,b)=>b.count-a.count).slice(0,5)
-      .map(x=>({icon:CICO[x.cat]||'📌',label:x.desc,cat:x.cat,amt:x.amt,saved:false}));
-    const savedTags=saved.map(t=>({...t,saved:true}));
-    // merge, dedupe by label
+    // Show recurring items (appeared 2+ times) sorted by frequency
+    const recurring=Object.values(freq).filter(x=>x.count>=2).sort((a,b)=>b.count-a.count).slice(0,8)
+      .map(x=>({icon:getCico()[x.cat]||'📌',label:x.desc,cat:x.cat,amt:0,saved:false,count:x.count}));
+    const savedTags=saved.map(t=>({...t,saved:true,count:0}));
     const seen=new Set();
-    return[...savedTags,...recurring].filter(t=>{if(seen.has(t.label))return false;seen.add(t.label);return true;}).slice(0,8);
+    return[...savedTags,...recurring].filter(t=>{if(seen.has(t.label))return false;seen.add(t.label);return true;}).slice(0,10);
   },[expenses]);
 
   const[selTag,setSelTag]=useState(null);
@@ -558,21 +559,22 @@ function AddPage({members,expenses=[],onSave,onClose,onImport,toast}){
     </div>
     <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
       {/* Quick tags */}
-      {quickTags.length>0&&<div className="mb-5">
+      {quickTags.length>0&&<div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-bold text-tx3 uppercase tracking-wider">快速標籤</label>
+          <label className="text-xs font-bold text-tx3 uppercase tracking-wider">常用標籤</label>
           <button onClick={saveTag} className="text-xs text-pri font-bold">＋ 儲存目前</button>
         </div>
-        <div className="scroll-x">
+        <div className="flex flex-wrap gap-2">
           {quickTags.map((t,i)=>(
-            <div key={i} className="flex-shrink-0 flex items-center gap-1.5">
+            <div key={i} className="flex items-center gap-1">
               <button onClick={()=>applyTag(t)}
-                className={`px-4 py-2.5 rounded-3xl text-sm font-semibold border-2 flex items-center gap-1.5 whitespace-nowrap transition-all
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold border-2 transition-all
                   ${selTag===t.label?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
-                <span>{t.icon}</span><span>{t.label}</span>
-                {t.amt>0&&<span className="text-xs opacity-70">{fmt(t.amt)}</span>}
+                <span>{t.icon}</span>
+                <span>{t.label}</span>
+                {t.count>=2&&<span className="text-[10px] bg-bd rounded-full px-1.5 py-0.5 opacity-60">{t.count}</span>}
               </button>
-              {t.saved&&<button onClick={()=>removeTag(t.label)} className="text-tx3 text-xs">✕</button>}
+              {t.saved&&<button onClick={()=>removeTag(t.label)} className="text-tx3 text-xs w-4 h-4 flex items-center justify-center">✕</button>}
             </div>))}
         </div>
       </div>}
@@ -731,9 +733,12 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
         participants:JSON.stringify(parts),
         ledgerId:lid}),
       mode:'no-cors'});
-    toast('✅ 已更新','ok');
-    setEditingExp(null);
-    setTimeout(()=>{if(onDelete)onDelete('__refresh__');},1500);
+    // Show toast first, then close sheet after brief delay so user sees confirmation
+    toast('✅ 已儲存','ok');
+    setTimeout(()=>{
+      setEditingExp(null);
+      setTimeout(()=>{if(onDelete)onDelete('__refresh__');},1500);
+    },600);
   };
 
   const ExpRow=({e,settled=false})=>{
