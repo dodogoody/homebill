@@ -686,6 +686,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
   const[editDesc,setEditDesc]=useState('');
   const[editDate,setEditDate]=useState('');
   const[editAmount,setEditAmount]=useState('');
+  const[editPayer,setEditPayer]=useState('');
   const[editShowCalc,setEditShowCalc]=useState(false);
   const[editSplit,setEditSplit]=useState('equal');
   const[editSel,setEditSel]=useState([]);
@@ -730,6 +731,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
         note:editNote,category:editCat||editingExp.category,
         date:editDate||editingExp.date,
         amount:parseFloat(editAmount)||editingExp.amount,
+        payer:editPayer||editingExp.payer,
         participants:JSON.stringify(parts),
         ledgerId:lid}),
       mode:'no-cors'});
