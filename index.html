@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8"><!-- v20260408-1204 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -751,7 +751,7 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
       if(Array.isArray(ps)){setEditSplit('equal');setEditSel(ps);setEditCustom({});}
       else if(ps&&typeof ps==='object'){setEditSplit('custom');setEditCustom(ps);setEditSel(Object.keys(ps));}
       else{setEditSplit('equal');setEditSel(data.members.map(mname));setEditCustom({});}
-      setEditAdjust({});setEditAdjSel(data.members.map(mname));setEditShowCalc(false);setEditingExp(e);
+      setEditPayer(e.payer||'');setEditAdjust({});setEditAdjSel(data.members.map(mname));setEditShowCalc(false);setEditingExp(e);
     };
     return(
     <div className={`flex gap-3 px-4 py-3.5 border-b border-bd last:border-0 ${settled?'opacity-60':''}`}>
