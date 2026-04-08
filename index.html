@@ -841,6 +841,20 @@ function RecordsPage({data,onDelete,onImport,ledgerName,onBack,ledgerId}){
       </div>
       {editShowCalc&&<div className="mb-3"><MiniCalc value={parseFloat(editAmount)||0} onChange={v=>{setEditAmount(String(v));setEditShowCalc(false);}} onClose={()=>setEditShowCalc(false)}/></div>}
 
+      {/* Payer */}
+      <div className="mb-3">
+        <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-2">付款人</label>
+        <div className="flex flex-wrap gap-2">
+          {members.map(m=>{const n=mname(m);const on=(editPayer||editingExp?.payer)===n;
+            return<button key={n} onClick={()=>setEditPayer(n)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl border-2 transition-all ${on?'border-pri bg-pri/15 text-pri':'border-bd bg-c2 text-tx2'}`}>
+              <span className="text-xl">{mav(m)}</span>
+              <span className="text-sm font-semibold">{n}</span>
+            </button>;
+          })}
+        </div>
+      </div>
+
       {/* Description */}
       <div className="mb-2">
         <label className="text-xs font-bold text-tx3 uppercase tracking-wider block mb-1.5">帳目名稱</label>
